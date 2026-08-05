@@ -181,6 +181,9 @@
       <h2>파일 목록</h2>
       <p class="desc">정리 후보 탐색 — 저가치·대용량 순 기본 정렬</p>
       <div class="filters">
+        <select id="fRoot">
+          <option value="">디렉터리: 전체</option>
+        </select>
         <select id="fGrade">
           <option value="">등급: 전체</option>
           <option value="hot">hot (활발)</option>
@@ -447,6 +450,19 @@ async function loadTree() {
   $("treeEmpty").hidden = data.dirs.length > 0;
   const total = data.dirs.reduce((s, d) => s + d.size, 0);
   data.dirs.forEach(d => box.appendChild(dirRow(d, 0, total)));
+  /* 파일 목록의 디렉터리 필터 옵션 갱신 (선택 유지) */
+  const sel = $("fRoot");
+  const current = sel.value;
+  sel.replaceChildren();
+  const all = document.createElement("option");
+  all.value = ""; all.textContent = "디렉터리: 전체";
+  sel.appendChild(all);
+  data.dirs.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d.path; opt.textContent = d.path;
+    sel.appendChild(opt);
+  });
+  sel.value = [...sel.options].some(o => o.value === current) ? current : "";
 }
 
 /* ---------- 파일 테이블 ---------- */
@@ -496,6 +512,7 @@ async function refreshAll() {
 async function refreshFiles() {
   const [sort, order] = $("fSort").value.split(":");
   const params = new URLSearchParams({ sort, order, limit: "50" });
+  if ($("fRoot").value) params.set("root", $("fRoot").value);
   if ($("fGrade").value) params.set("grade", $("fGrade").value);
   const q = $("fSearch").value.trim();
   if (q) params.set("q", q);
@@ -541,6 +558,7 @@ $("scanBtn").addEventListener("click", async () => {
   pollStatus();
 });
 
+$("fRoot").addEventListener("change", refreshFiles);
 $("fGrade").addEventListener("change", refreshFiles);
 $("fSort").addEventListener("change", refreshFiles);
 let searchTimer = null;

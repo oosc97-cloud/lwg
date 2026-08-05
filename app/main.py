@@ -1,4 +1,5 @@
 """FastAPI 서버: 스캔 트리거 + 분석 조회 API + 대시보드 정적 서빙."""
+import os
 import threading
 from pathlib import Path
 from typing import Optional
@@ -169,11 +170,15 @@ def files(
     order: str = Query("asc"),
     grade: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
+    root: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=500),
 ):
     col = SORT_COLUMNS.get(sort, "score")
     direction = "DESC" if order.lower() == "desc" else "ASC"
     where, params = [], []
+    if root:
+        where.append("(path LIKE ? OR dir = ?)")
+        params.extend([os.path.join(root, "%"), root])
     if grade in ("hot", "warm", "cold", "stale"):
         where.append("grade = ?")
         params.append(grade)

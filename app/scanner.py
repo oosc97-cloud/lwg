@@ -41,7 +41,7 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
     scan_id = cur.lastrowid
     conn.commit()
 
-    batch: list[tuple] = []
+    batch = []
     file_count = 0
     total_size = 0
 

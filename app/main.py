@@ -1,6 +1,7 @@
 """FastAPI 서버: 스캔 트리거 + 분석 조회 API + 대시보드 정적 서빙."""
 import threading
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -20,11 +21,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _scan_lock = threading.Lock()
-_scan_thread: threading.Thread | None = None
+_scan_thread: Optional[threading.Thread] = None
 
 
 class ScanRequest(BaseModel):
-    root: str | None = None
+    root: Optional[str] = None
 
 
 @app.get("/")
@@ -126,8 +127,8 @@ SORT_COLUMNS = {"score": "score", "size": "size", "atime": "atime", "mtime": "mt
 def files(
     sort: str = Query("score"),
     order: str = Query("asc"),
-    grade: str | None = Query(None),
-    q: str | None = Query(None),
+    grade: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=500),
 ):
     col = SORT_COLUMNS.get(sort, "score")

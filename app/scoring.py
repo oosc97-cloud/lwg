@@ -9,6 +9,7 @@ atime < mtime이면 mtime을 유효 접근시간으로 보정한다.
 """
 import math
 import time
+from typing import Optional
 
 GRADES = ("hot", "warm", "cold", "stale")
 
@@ -16,7 +17,7 @@ GRADES = ("hot", "warm", "cold", "stale")
 def value_score(
     atime: float,
     mtime: float,
-    now: float | None = None,
+    now: Optional[float] = None,
     *,
     atime_weight: float = 0.6,
     mtime_weight: float = 0.4,

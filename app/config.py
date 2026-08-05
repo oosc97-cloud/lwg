@@ -3,6 +3,7 @@ import glob
 import json
 import sys
 from pathlib import Path
+from typing import List
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "config.json"
@@ -43,7 +44,7 @@ def load_config() -> dict:
     return cfg
 
 
-def resolve_scan_roots(cfg: dict) -> list[str]:
+def resolve_scan_roots(cfg: dict) -> List[str]:
     """config에 명시된 루트 우선. 없으면 플랫폼 기본값:
     Windows는 C:\\ (OS 영역은 excludes로 제외), Linux는 /shb*, /nbs* 데이터 영역."""
     if cfg.get("scan_roots"):

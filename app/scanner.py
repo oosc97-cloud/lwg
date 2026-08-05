@@ -76,6 +76,7 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
 
     try:
         root_norm = os.path.normpath(root)
+        dir_stats[root_norm]  # 파일이 하나도 없어도 루트는 트리에 0 B로 표시
         stack = [root_norm]
         while stack:
             current = stack.pop()

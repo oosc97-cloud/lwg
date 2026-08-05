@@ -34,6 +34,15 @@ def _norm(path: str) -> str:
     return p.lower() if sys.platform == "win32" else p
 
 
+def run_scan_many(roots, cfg: dict, db_path: Path) -> None:
+    """여러 데이터 영역을 순차 스캔. 한 루트가 실패해도 나머지는 계속한다."""
+    for root in roots:
+        try:
+            run_scan(root, cfg, db_path)
+        except Exception:
+            continue
+
+
 def run_scan(root: str, cfg: dict, db_path: Path) -> int:
     score_cfg = cfg["score"]
     exclude_paths = {_norm(p) for p in cfg.get("windows_excludes", [])} if sys.platform == "win32" else set()

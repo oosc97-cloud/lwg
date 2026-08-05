@@ -40,30 +40,39 @@ def roots():
 
 @app.post("/api/scan")
 def start_scan(req: ScanRequest):
+    """root 지정 시 해당 경로만, 미지정 시 모든 데이터 영역을 순차 스캔."""
     global _scan_thread
-    resolved = resolve_scan_roots(CFG)
-    root = req.root or (resolved[0] if resolved else None)
-    if not root:
+    if req.root:
+        roots = [req.root]
+    else:
+        roots = resolve_scan_roots(CFG)
+    if not roots:
         raise HTTPException(400, "스캔 루트가 없습니다. config.json의 scan_roots를 확인하세요.")
-    if not Path(root).is_dir():
-        raise HTTPException(400, f"디렉터리가 아닙니다: {root}")
+    missing = [r for r in roots if not Path(r).is_dir()]
+    if missing:
+        raise HTTPException(400, f"디렉터리가 아닙니다: {', '.join(missing)}")
     with _scan_lock:
         if _scan_thread and _scan_thread.is_alive():
             raise HTTPException(409, "이미 스캔이 진행 중입니다.")
         _scan_thread = threading.Thread(
-            target=scanner.run_scan, args=(root, CFG, DB_PATH), daemon=True
+            target=scanner.run_scan_many, args=(roots, CFG, DB_PATH), daemon=True
         )
         _scan_thread.start()
-    return {"started": True, "root": root}
+    return {"started": True, "roots": roots}
 
 
 @app.get("/api/scan/status")
 def scan_status():
+    """여러 루트 순차 스캔 중에는 개별 스캔이 done이어도 전체는 running으로 표시."""
+    running = _scan_thread is not None and _scan_thread.is_alive()
     with db.connect(DB_PATH) as conn:
         row = conn.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     if not row:
-        return {"status": "none"}
-    return dict(row)
+        return {"status": "running" if running else "none"}
+    result = dict(row)
+    if running:
+        result["status"] = "running"
+    return result
 
 
 @app.get("/api/summary")

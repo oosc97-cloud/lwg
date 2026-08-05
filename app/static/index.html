@@ -144,7 +144,7 @@
   <p class="sub">데이터 영역의 접근시간(atime)·수정시간(mtime)을 조합해 데이터 가치점수를 산정합니다.</p>
 
   <div class="scanbar">
-    <input type="text" id="rootInput" placeholder="스캔 루트 경로">
+    <input type="text" id="rootInput" placeholder="스캔 루트 경로 (비워두면 전체 데이터 영역)">
     <button class="primary" id="scanBtn">스캔 시작</button>
   </div>
   <div id="scanStatus"></div>
@@ -552,7 +552,9 @@ $("fSearch").addEventListener("input", () => {
 /* ---------- 초기화 ---------- */
 (async () => {
   const roots = await getJSON("/api/roots");
-  if (roots.roots.length) $("rootInput").value = roots.roots[0];
+  if (roots.roots.length) {
+    $("rootInput").placeholder = "비워두면 전체 스캔: " + roots.roots.join(", ");
+  }
   await pollStatus();
   const st = await getJSON("/api/scan/status");
   if (st.status === "running") { $("scanBtn").disabled = true; polling = setInterval(pollStatus, 2000); }

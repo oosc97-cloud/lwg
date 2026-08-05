@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>파일시스템 추적 관리 에이전트</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --accent: #2a78d6;
+    /* 등급 ordinal 램프 (blue 250/350/450/600) — 라이트/다크 공통 유효 범위 */
+    --g-stale: #86b6ef;
+    --g-cold: #5598e7;
+    --g-warm: #2a78d6;
+    --g-hot: #184f95;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface-1: #1a1a19;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --accent: #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 14px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  .sub { color: var(--text-secondary); margin: 4px 0 0; font-size: 13px; }
+
+  .scanbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin: 20px 0 8px;
+  }
+  .scanbar input[type=text] {
+    flex: 1; min-width: 220px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px;
+  }
+  button.primary {
+    padding: 8px 16px; border: none; border-radius: 8px;
+    background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  #scanStatus { color: var(--text-secondary); font-size: 13px; min-height: 18px; margin-bottom: 16px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .tile .label { color: var(--text-secondary); font-size: 12px; }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
+  .tile .note { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  @media (max-width: 820px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; overflow-x: auto;
+  }
+  .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
+  .card .desc { color: var(--text-muted); font-size: 12px; margin: 0 0 12px; }
+  .card.full { grid-column: 1 / -1; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  .stackbar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; background: var(--grid); }
+  .stackbar .seg { height: 100%; border-right: 2px solid var(--surface-1); cursor: default; }
+  .stackbar .seg:last-child { border-right: none; }
+  .stackbar .seg:hover { filter: brightness(1.12); }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters select, .filters input {
+    padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.path { max-width: 420px; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15);
+  }
+  #tooltip .t-val { font-weight: 600; font-size: 13px; }
+  #tooltip .t-label { color: var(--text-secondary); }
+  svg text { font-family: inherit; }
+  .empty { color: var(--text-muted); padding: 20px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>파일시스템 추적 관리 에이전트</h1>
+  <p class="sub">데이터 영역의 접근시간(atime)·수정시간(mtime)을 조합해 데이터 가치점수를 산정합니다.</p>
+
+  <div class="scanbar">
+    <input type="text" id="rootInput" placeholder="스캔 루트 경로">
+    <button class="primary" id="scanBtn">스캔 시작</button>
+  </div>
+  <div id="scanStatus"></div>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">총 파일 수</div><div class="value" id="tFiles">–</div></div>
+    <div class="tile"><div class="label">총 용량</div><div class="value" id="tSize">–</div></div>
+    <div class="tile"><div class="label">평균 가치점수</div><div class="value" id="tScore">–</div><div class="note">0–100</div></div>
+    <div class="tile"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note">cold + stale 등급</div></div>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <h2>가치점수 분포</h2>
+      <p class="desc">점수 구간별 파일 수</p>
+      <div id="histChart"></div>
+    </div>
+    <div class="card">
+      <h2>등급 구성 (용량 기준)</h2>
+      <p class="desc">전체 용량 중 각 등급이 차지하는 비중</p>
+      <div class="stackbar" id="gradeBar"></div>
+      <div class="legend" id="gradeLegend"></div>
+    </div>
+    <div class="card full">
+      <h2>상위 디렉터리 (용량 기준)</h2>
+      <p class="desc">스캔 루트 바로 아래 디렉터리별 용량과 평균 가치점수</p>
+      <div id="dirChart"></div>
+    </div>
+    <div class="card full">
+      <h2>파일 목록</h2>
+      <p class="desc">정리 후보 탐색 — 저가치·대용량 순 기본 정렬</p>
+      <div class="filters">
+        <select id="fGrade">
+          <option value="">등급: 전체</option>
+          <option value="hot">hot (활발)</option>
+          <option value="warm">warm (보통)</option>
+          <option value="cold">cold (저조)</option>
+          <option value="stale">stale (방치)</option>
+        </select>
+        <select id="fSort">
+          <option value="score:asc">점수 낮은 순</option>
+          <option value="size:desc">용량 큰 순</option>
+          <option value="atime:asc">접근 오래된 순</option>
+          <option value="mtime:asc">수정 오래된 순</option>
+        </select>
+        <input type="text" id="fSearch" placeholder="경로 검색">
+      </div>
+      <table>
+        <thead>
+          <tr><th>경로</th><th class="num">용량</th><th>마지막 접근</th><th>마지막 수정</th><th class="num">점수</th><th>등급</th></tr>
+        </thead>
+        <tbody id="fileRows"></tbody>
+      </table>
+      <div class="empty" id="fileEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
+    </div>
+  </div>
+</div>
+<div id="tooltip"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const GRADE_COLOR = { stale: "#86b6ef", cold: "#5598e7", warm: "#2a78d6", hot: "#184f95" };
+const GRADE_LABEL = { hot: "hot (활발)", warm: "warm (보통)", cold: "cold (저조)", stale: "stale (방치)" };
+/* 시퀀셜 blue 램프: 점수 낮음(밝음) → 높음(어두움) */
+const SEQ = ["#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#104281"];
+
+function fmtBytes(n) {
+  if (n === 0) return "0 B";
+  const u = ["B","KB","MB","GB","TB"];
+  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1);
+  const v = n / Math.pow(1024, i);
+  return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i];
+}
+const fmtNum = n => n.toLocaleString("ko-KR");
+const fmtDate = ts => {
+  const d = new Date(ts * 1000);
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+};
+
+/* ---------- 툴팁 ---------- */
+const tip = $("tooltip");
+function showTip(evt, valueText, labelText) {
+  tip.replaceChildren();
+  const v = document.createElement("div"); v.className = "t-val"; v.textContent = valueText;
+  const l = document.createElement("div"); l.className = "t-label"; l.textContent = labelText;
+  tip.append(v, l);
+  tip.style.display = "block";
+  moveTip(evt);
+}
+function moveTip(evt) {
+  const pad = 12;
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  const r = tip.getBoundingClientRect();
+  if (x + r.width > window.innerWidth - 8) x = evt.clientX - r.width - pad;
+  if (y + r.height > window.innerHeight - 8) y = evt.clientY - r.height - pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+/* ---------- 히스토그램 (SVG 컬럼) ---------- */
+function renderHist(buckets) {
+  const W = 480, H = 200, padL = 44, padB = 24, padT = 14;
+  const maxN = Math.max(...buckets.map(b => b.count), 1);
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const band = plotW / buckets.length;
+  const barW = Math.min(24, band - 8);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", "100%");
+
+  /* y 그리드/눈금 */
+  const step = Math.max(1, Math.ceil(maxN / 4));
+  for (let v = 0; v <= maxN; v += step) {
+    const y = padT + plotH - (v / maxN) * plotH;
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", padL); line.setAttribute("x2", W - 10);
+    line.setAttribute("y1", y); line.setAttribute("y2", y);
+    line.setAttribute("stroke", "var(--grid)"); line.setAttribute("stroke-width", "1");
+    svg.appendChild(line);
+    const t = document.createElementNS(svgNS, "text");
+    t.setAttribute("x", padL - 6); t.setAttribute("y", y + 4);
+    t.setAttribute("text-anchor", "end"); t.setAttribute("font-size", "10");
+    t.setAttribute("fill", "var(--text-muted)");
+    t.textContent = fmtNum(v);
+    svg.appendChild(t);
+  }
+
+  const maxIdx = buckets.reduce((m, b, i) => b.count > buckets[m].count ? i : m, 0);
+  buckets.forEach((b, i) => {
+    const h = (b.count / maxN) * plotH;
+    const x = padL + i * band + (band - barW) / 2;
+    const y = padT + plotH - h;
+    const rect = document.createElementNS(svgNS, "path");
+    const r = Math.min(4, h);
+    rect.setAttribute("d",
+      `M${x},${padT + plotH} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + barW - r},${y} Q${x + barW},${y} ${x + barW},${y + r} L${x + barW},${padT + plotH} Z`);
+    rect.setAttribute("fill", SEQ[i]);
+    rect.style.cursor = "default";
+    const label = `점수 ${b.range} · 파일 ${fmtNum(b.count)}개 · ${fmtBytes(b.size)}`;
+    rect.addEventListener("pointerenter", e => { rect.setAttribute("opacity", "0.8"); showTip(e, fmtNum(b.count) + "개", "점수 " + b.range + " · " + fmtBytes(b.size)); });
+    rect.addEventListener("pointermove", moveTip);
+    rect.addEventListener("pointerleave", () => { rect.removeAttribute("opacity"); hideTip(); });
+    svg.appendChild(rect);
+    /* 최대 구간만 직접 라벨 */
+    if (i === maxIdx && b.count > 0) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", x + barW / 2); t.setAttribute("y", y - 4);
+      t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", "10");
+      t.setAttribute("fill", "var(--text-secondary)");
+      t.textContent = fmtNum(b.count);
+      svg.appendChild(t);
+    }
+    /* x 라벨: 짝수 구간만 */
+    if (i % 2 === 0) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", padL + i * band + band / 2); t.setAttribute("y", H - 8);
+      t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", "10");
+      t.setAttribute("fill", "var(--text-muted)");
+      t.textContent = b.range.split("-")[0];
+      svg.appendChild(t);
+    }
+  });
+  /* 기준선 */
+  const base = document.createElementNS(svgNS, "line");
+  base.setAttribute("x1", padL); base.setAttribute("x2", W - 10);
+  base.setAttribute("y1", padT + plotH); base.setAttribute("y2", padT + plotH);
+  base.setAttribute("stroke", "var(--baseline)");
+  svg.appendChild(base);
+
+  $("histChart").replaceChildren(svg);
+}
+
+/* ---------- 등급 스택바 ---------- */
+function renderGrades(grades, totalSize) {
+  const bar = $("gradeBar"), legend = $("gradeLegend");
+  bar.replaceChildren(); legend.replaceChildren();
+  const order = ["hot", "warm", "cold", "stale"];
+  order.forEach(g => {
+    const info = grades[g];
+    const pct = totalSize > 0 ? (info.size / totalSize) * 100 : 0;
+    if (pct > 0) {
+      const seg = document.createElement("div");
+      seg.className = "seg";
+      seg.style.width = pct + "%";
+      seg.style.background = GRADE_COLOR[g];
+      seg.addEventListener("pointerenter", e => showTip(e, fmtBytes(info.size) + " (" + pct.toFixed(1) + "%)", GRADE_LABEL[g] + " · " + fmtNum(info.count) + "개"));
+      seg.addEventListener("pointermove", moveTip);
+      seg.addEventListener("pointerleave", hideTip);
+      bar.appendChild(seg);
+    }
+    const key = document.createElement("span");
+    key.className = "key";
+    const sw = document.createElement("span");
+    sw.className = "sw"; sw.style.background = GRADE_COLOR[g];
+    key.appendChild(sw);
+    key.appendChild(document.createTextNode(GRADE_LABEL[g] + " " + fmtNum(info.count) + "개 · " + fmtBytes(info.size)));
+    legend.appendChild(key);
+  });
+}
+
+/* ---------- 상위 디렉터리 (가로 바) ---------- */
+function renderDirs(dirs) {
+  const container = $("dirChart");
+  container.replaceChildren();
+  if (!dirs.length) { container.innerHTML = ""; return; }
+  const maxS = Math.max(...dirs.map(d => d.s), 1);
+  const W = 1000, rowH = 30, labelW = 220, valW = 150;
+  const H = dirs.length * rowH + 6;
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("width", "100%");
+  const plotW = W - labelW - valW;
+  dirs.forEach((d, i) => {
+    const y = i * rowH + 4;
+    const barH = 18;
+    const w = Math.max((d.s / maxS) * plotW, 2);
+    const name = document.createElementNS(svgNS, "text");
+    name.setAttribute("x", labelW - 10); name.setAttribute("y", y + barH / 2 + 4);
+    name.setAttribute("text-anchor", "end"); name.setAttribute("font-size", "12");
+    name.setAttribute("fill", "var(--text-primary)");
+    name.textContent = d.top_dir.length > 26 ? d.top_dir.slice(0, 25) + "…" : d.top_dir;
+    svg.appendChild(name);
+    const r = 4;
+    const bar = document.createElementNS(svgNS, "path");
+    bar.setAttribute("d",
+      `M${labelW},${y} L${labelW + w - r},${y} Q${labelW + w},${y} ${labelW + w},${y + r} L${labelW + w},${y + barH - r} Q${labelW + w},${y + barH} ${labelW + w - r},${y + barH} L${labelW},${y + barH} Z`);
+    bar.setAttribute("fill", "var(--accent)");
+    bar.addEventListener("pointerenter", e => { bar.setAttribute("opacity", "0.8"); showTip(e, fmtBytes(d.s), d.top_dir + " · " + fmtNum(d.n) + "개 · 평균 점수 " + d.avg_score); });
+    bar.addEventListener("pointermove", moveTip);
+    bar.addEventListener("pointerleave", () => { bar.removeAttribute("opacity"); hideTip(); });
+    svg.appendChild(bar);
+    const val = document.createElementNS(svgNS, "text");
+    val.setAttribute("x", labelW + w + 8); val.setAttribute("y", y + barH / 2 + 4);
+    val.setAttribute("font-size", "11");
+    val.setAttribute("fill", "var(--text-secondary)");
+    val.textContent = fmtBytes(d.s) + " · 평균 " + d.avg_score + "점";
+    svg.appendChild(val);
+  });
+  container.appendChild(svg);
+}
+
+/* ---------- 파일 테이블 ---------- */
+function renderFiles(files) {
+  const tbody = $("fileRows");
+  tbody.replaceChildren();
+  $("fileEmpty").hidden = files.length > 0;
+  files.forEach(f => {
+    const tr = document.createElement("tr");
+    const tdPath = document.createElement("td");
+    tdPath.className = "path"; tdPath.textContent = f.path; tdPath.title = f.path;
+    const tdSize = document.createElement("td");
+    tdSize.className = "num"; tdSize.textContent = fmtBytes(f.size);
+    const tdA = document.createElement("td"); tdA.textContent = fmtDate(f.atime);
+    const tdM = document.createElement("td"); tdM.textContent = fmtDate(f.mtime);
+    const tdScore = document.createElement("td");
+    tdScore.className = "num"; tdScore.textContent = f.score.toFixed(1);
+    const tdGrade = document.createElement("td");
+    const chip = document.createElement("span"); chip.className = "chip";
+    const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = GRADE_COLOR[f.grade];
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode(f.grade));
+    tdGrade.appendChild(chip);
+    tr.append(tdPath, tdSize, tdA, tdM, tdScore, tdGrade);
+    tbody.appendChild(tr);
+  });
+}
+
+/* ---------- 데이터 로드 ---------- */
+async function getJSON(url) { const r = await fetch(url); return r.json(); }
+
+async function refreshAll() {
+  const [summary, dist, dirs] = await Promise.all([
+    getJSON("/api/summary"), getJSON("/api/distribution"), getJSON("/api/top-dirs?limit=12"),
+  ]);
+  $("tFiles").textContent = fmtNum(summary.file_count);
+  $("tSize").textContent = fmtBytes(summary.total_size);
+  $("tScore").textContent = summary.avg_score.toFixed(1);
+  const cleanupSize = summary.grades.cold.size + summary.grades.stale.size;
+  $("tCleanup").textContent = fmtBytes(cleanupSize);
+  renderHist(dist.buckets);
+  renderGrades(summary.grades, summary.total_size);
+  renderDirs(dirs.dirs);
+  await refreshFiles();
+}
+
+async function refreshFiles() {
+  const [sort, order] = $("fSort").value.split(":");
+  const params = new URLSearchParams({ sort, order, limit: "50" });
+  if ($("fGrade").value) params.set("grade", $("fGrade").value);
+  const q = $("fSearch").value.trim();
+  if (q) params.set("q", q);
+  const data = await getJSON("/api/files?" + params);
+  renderFiles(data.files);
+}
+
+/* ---------- 스캔 제어 ---------- */
+let polling = null;
+async function pollStatus() {
+  const st = await getJSON("/api/scan/status");
+  const el = $("scanStatus");
+  if (st.status === "running") {
+    el.textContent = "스캔 중… " + fmtNum(st.file_count) + "개 파일 · " + fmtBytes(st.total_size) + " (" + st.root + ")";
+    $("scanBtn").disabled = true;
+  } else {
+    $("scanBtn").disabled = false;
+    if (polling) { clearInterval(polling); polling = null; await refreshAll(); }
+    if (st.status === "done") {
+      el.textContent = "마지막 스캔 완료: " + st.root + " · " + fmtNum(st.file_count) + "개 · " + fmtBytes(st.total_size);
+    } else if (st.status === "error") {
+      el.textContent = "스캔 오류: " + (st.error || "알 수 없음");
+    } else {
+      el.textContent = "아직 스캔 이력이 없습니다.";
+    }
+  }
+}
+
+$("scanBtn").addEventListener("click", async () => {
+  const root = $("rootInput").value.trim();
+  const r = await fetch("/api/scan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ root: root || null }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    $("scanStatus").textContent = "시작 실패: " + (err.detail || r.status);
+    return;
+  }
+  $("scanBtn").disabled = true;
+  polling = setInterval(pollStatus, 2000);
+  pollStatus();
+});
+
+$("fGrade").addEventListener("change", refreshFiles);
+$("fSort").addEventListener("change", refreshFiles);
+let searchTimer = null;
+$("fSearch").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(refreshFiles, 300);
+});
+
+/* ---------- 초기화 ---------- */
+(async () => {
+  const roots = await getJSON("/api/roots");
+  if (roots.roots.length) $("rootInput").value = roots.roots[0];
+  await pollStatus();
+  const st = await getJSON("/api/scan/status");
+  if (st.status === "running") { $("scanBtn").disabled = true; polling = setInterval(pollStatus, 2000); }
+  await refreshAll();
+})();
+</script>
+</body>
+</html>

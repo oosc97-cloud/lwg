@@ -1,0 +1,26 @@
+{
+  "scan_roots": [],
+  "windows_excludes": [
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+    "C:\\ProgramData",
+    "C:\\$Recycle.Bin",
+    "C:\\System Volume Information",
+    "C:\\Recovery",
+    "C:\\PerfLogs"
+  ],
+  "exclude_names": [
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    "__pycache__",
+    ".git"
+  ],
+  "score": {
+    "atime_weight": 0.6,
+    "mtime_weight": 0.4,
+    "atime_half_life_days": 30,
+    "mtime_half_life_days": 90
+  },
+  "db_path": "data/fs_agent.db"
+}

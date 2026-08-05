@@ -109,6 +109,37 @@ def distribution():
     return {"buckets": buckets}
 
 
+def _dir_row(row) -> dict:
+    count = row["file_count"]
+    return {
+        "path": row["path"],
+        "name": row["name"],
+        "size": row["size"],
+        "file_count": count,
+        "avg_score": round(row["score_sum"] / count, 1) if count else 0.0,
+    }
+
+
+@app.get("/api/tree")
+def tree(path: Optional[str] = Query(None), files_limit: int = Query(100, ge=0, le=500)):
+    """TreeSize식 탐색: path 미지정 시 스캔 루트 목록, 지정 시 직계 하위 디렉터리+파일."""
+    with db.connect(DB_PATH) as conn:
+        if not path:
+            rows = conn.execute(
+                "SELECT * FROM dirs WHERE parent = '' ORDER BY size DESC"
+            ).fetchall()
+            return {"dirs": [_dir_row(r) for r in rows], "files": []}
+        drows = conn.execute(
+            "SELECT * FROM dirs WHERE parent = ? ORDER BY size DESC", (path,)
+        ).fetchall()
+        frows = conn.execute(
+            """SELECT path, name, size, atime, mtime, score, grade
+               FROM files WHERE dir = ? ORDER BY size DESC LIMIT ?""",
+            (path, files_limit),
+        ).fetchall()
+    return {"dirs": [_dir_row(r) for r in drows], "files": [dict(r) for r in frows]}
+
+
 @app.get("/api/top-dirs")
 def top_dirs(limit: int = Query(10, ge=1, le=50)):
     with db.connect(DB_PATH) as conn:

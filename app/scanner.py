@@ -7,6 +7,7 @@ os.scandir 기반 반복 순회로 파일 메타데이터(size/atime/mtime)를 �
 import os
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 
 from . import db
@@ -15,11 +16,16 @@ from .scoring import grade, value_score
 BATCH_SIZE = 1000
 
 UPSERT = """
-INSERT INTO files (path, name, ext, top_dir, size, atime, mtime, score, grade, scan_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO files (path, name, ext, top_dir, dir, size, atime, mtime, score, grade, scan_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(path) DO UPDATE SET
-    size=excluded.size, atime=excluded.atime, mtime=excluded.mtime,
+    dir=excluded.dir, size=excluded.size, atime=excluded.atime, mtime=excluded.mtime,
     score=excluded.score, grade=excluded.grade, scan_id=excluded.scan_id
+"""
+
+DIR_INSERT = """
+INSERT OR REPLACE INTO dirs (path, parent, name, depth, size, file_count, score_sum, scan_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 
@@ -44,6 +50,8 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
     batch = []
     file_count = 0
     total_size = 0
+    # TreeSize식 트리 뷰용: 디렉터리별 [누적 용량, 파일 수, 점수 합] (조상 디렉터리까지 전파)
+    dir_stats = defaultdict(lambda: [0, 0, 0.0])
 
     def flush():
         nonlocal file_count, total_size
@@ -91,12 +99,26 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
                             rel = os.path.relpath(entry.path, root_norm)
                             top_dir = rel.split(os.sep)[0] if os.sep in rel else "(루트)"
                             ext = os.path.splitext(entry.name)[1].lower() or "(없음)"
+                            parent_dir = os.path.dirname(entry.path)
+                            p = parent_dir
+                            while True:
+                                stats = dir_stats[p]
+                                stats[0] += st.st_size
+                                stats[1] += 1
+                                stats[2] += score
+                                if p == root_norm:
+                                    break
+                                nxt = os.path.dirname(p)
+                                if nxt == p:
+                                    break
+                                p = nxt
                             batch.append(
                                 (
                                     entry.path,
                                     entry.name,
                                     ext,
                                     top_dir,
+                                    parent_dir,
                                     st.st_size,
                                     st.st_atime,
                                     st.st_mtime,
@@ -115,6 +137,23 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
         # 이번 스캔에서 발견되지 않은(삭제된) 루트 하위 파일 제거
         like = os.path.join(root_norm, "%")
         conn.execute("DELETE FROM files WHERE path LIKE ? AND scan_id != ?", (like, scan_id))
+        # 디렉터리 집계 저장 (루트 하위 트리 전체 교체)
+        conn.execute("DELETE FROM dirs WHERE path = ? OR path LIKE ?", (root_norm, like))
+        dir_rows = []
+        for p, (size, count, score_sum) in dir_stats.items():
+            if p == root_norm:
+                parent, depth = "", 0
+            else:
+                parent = os.path.dirname(p)
+                rel = os.path.relpath(p, root_norm)
+                depth = rel.count(os.sep) + 1
+            name = os.path.basename(p) or p
+            dir_rows.append((p, parent, name, depth, size, count, score_sum, scan_id))
+            if len(dir_rows) >= BATCH_SIZE:
+                conn.executemany(DIR_INSERT, dir_rows)
+                dir_rows.clear()
+        if dir_rows:
+            conn.executemany(DIR_INSERT, dir_rows)
         conn.execute(
             "UPDATE scans SET finished_at=?, status='done', file_count=?, total_size=? WHERE id=?",
             (time.time(), file_count, total_size, scan_id),

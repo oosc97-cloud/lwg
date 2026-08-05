@@ -8,7 +8,7 @@
 | 플랫폼 | 기본 스캔 루트 |
 |---|---|
 | Linux | `/shb*`, `/nbs*` 에 매칭되는 디렉터리 자동 인식 |
-| Windows | `C:\` (Windows, Program Files 등 OS 영역은 제외 목록으로 스킵) |
+| Windows | `D:\` (데이터 드라이브) |
 
 `config.json`의 `scan_roots`에 경로를 명시하면 그 값이 우선합니다.
 
@@ -50,7 +50,8 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 - KPI: 총 파일 수 · 총 용량 · 평균 가치점수 · 정리 후보(cold+stale) 용량
 - 가치점수 분포 히스토그램 (10점 구간)
 - 등급 구성 스택바 (용량 기준)
-- 상위 디렉터리별 용량·평균 점수
+- **디렉터리 트리 (TreeSize 스타일)**: 폴더 클릭으로 펼치기, 용량 순 정렬,
+  상위 폴더 대비 비중 바(%), 파일 수, 평균 가치점수
 - 파일 목록: 등급 필터 / 점수·용량·접근·수정 시각 정렬 / 경로 검색
 
 ## API
@@ -61,6 +62,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 | GET | `/api/scan/status` | 최근 스캔 상태·진행률 |
 | GET | `/api/summary` | 전체 요약 + 등급별 집계 |
 | GET | `/api/distribution` | 점수 10점 구간 히스토그램 |
+| GET | `/api/tree` | 디렉터리 트리 탐색 (`path` 미지정 시 루트, 지정 시 하위 목록) |
 | GET | `/api/top-dirs` | 상위 디렉터리 집계 |
 | GET | `/api/files` | 파일 목록 (grade/sort/order/q/limit) |
 | GET | `/api/cleanup-candidates` | 저가치·대용량 정리 후보 |

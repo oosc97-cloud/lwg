@@ -50,7 +50,7 @@ def resolve_scan_roots(cfg: dict) -> List[str]:
     if cfg.get("scan_roots"):
         return [str(Path(r)) for r in cfg["scan_roots"]]
     if sys.platform == "win32":
-        return ["C:\\"]
+        return ["D:\\"]
     roots = sorted(glob.glob("/shb*") + glob.glob("/nbs*"))
     return [r for r in roots if Path(r).is_dir()]
 

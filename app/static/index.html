@@ -106,6 +106,27 @@
   .chip { display: inline-flex; align-items: center; gap: 6px; }
   .chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
+  /* 디렉터리 트리 (TreeSize 스타일) */
+  .trow {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) 150px 90px 56px 80px 76px;
+    gap: 10px; align-items: center;
+    padding: 4px 6px; border-radius: 6px;
+    font-size: 13px; min-width: 700px;
+  }
+  .thead-row { color: var(--text-muted); font-size: 12px; border-bottom: 1px solid var(--grid); border-radius: 0; padding-bottom: 6px; margin-bottom: 4px; }
+  .trow.dir { cursor: pointer; }
+  .trow.dir:hover { background: var(--page); }
+  .trow .name { display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .trow .caret { width: 14px; flex: none; color: var(--text-muted); transition: transform .12s; font-size: 11px; }
+  .trow.open > .name .caret, .trow.open .caret { transform: rotate(90deg); }
+  .trow.file .name { color: var(--text-secondary); }
+  .trow .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tbar { height: 12px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+  .tbar > div { height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; }
+  .trow.file .tbar > div { opacity: .45; }
+  .tmore { color: var(--text-muted); font-size: 12px; padding: 4px 6px; }
+
   #tooltip {
     position: fixed; pointer-events: none; z-index: 10; display: none;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
@@ -148,9 +169,13 @@
       <div class="legend" id="gradeLegend"></div>
     </div>
     <div class="card full">
-      <h2>상위 디렉터리 (용량 기준)</h2>
-      <p class="desc">스캔 루트 바로 아래 디렉터리별 용량과 평균 가치점수</p>
-      <div id="dirChart"></div>
+      <h2>디렉터리 트리</h2>
+      <p class="desc">폴더를 클릭하면 펼쳐집니다 — 용량 순 정렬, 비중(%)은 상위 폴더 대비</p>
+      <div class="trow thead-row">
+        <span>이름</span><span>비중</span><span class="num">용량</span><span class="num">%</span><span class="num">파일 수</span><span class="num">평균 점수</span>
+      </div>
+      <div id="treeBox"></div>
+      <div class="empty" id="treeEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
     </div>
     <div class="card full">
       <h2>파일 목록</h2>
@@ -326,46 +351,102 @@ function renderGrades(grades, totalSize) {
   });
 }
 
-/* ---------- 상위 디렉터리 (가로 바) ---------- */
-function renderDirs(dirs) {
-  const container = $("dirChart");
-  container.replaceChildren();
-  if (!dirs.length) { container.innerHTML = ""; return; }
-  const maxS = Math.max(...dirs.map(d => d.s), 1);
-  const W = 1000, rowH = 30, labelW = 220, valW = 150;
-  const H = dirs.length * rowH + 6;
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("width", "100%");
-  const plotW = W - labelW - valW;
-  dirs.forEach((d, i) => {
-    const y = i * rowH + 4;
-    const barH = 18;
-    const w = Math.max((d.s / maxS) * plotW, 2);
-    const name = document.createElementNS(svgNS, "text");
-    name.setAttribute("x", labelW - 10); name.setAttribute("y", y + barH / 2 + 4);
-    name.setAttribute("text-anchor", "end"); name.setAttribute("font-size", "12");
-    name.setAttribute("fill", "var(--text-primary)");
-    name.textContent = d.top_dir.length > 26 ? d.top_dir.slice(0, 25) + "…" : d.top_dir;
-    svg.appendChild(name);
-    const r = 4;
-    const bar = document.createElementNS(svgNS, "path");
-    bar.setAttribute("d",
-      `M${labelW},${y} L${labelW + w - r},${y} Q${labelW + w},${y} ${labelW + w},${y + r} L${labelW + w},${y + barH - r} Q${labelW + w},${y + barH} ${labelW + w - r},${y + barH} L${labelW},${y + barH} Z`);
-    bar.setAttribute("fill", "var(--accent)");
-    bar.addEventListener("pointerenter", e => { bar.setAttribute("opacity", "0.8"); showTip(e, fmtBytes(d.s), d.top_dir + " · " + fmtNum(d.n) + "개 · 평균 점수 " + d.avg_score); });
-    bar.addEventListener("pointermove", moveTip);
-    bar.addEventListener("pointerleave", () => { bar.removeAttribute("opacity"); hideTip(); });
-    svg.appendChild(bar);
-    const val = document.createElementNS(svgNS, "text");
-    val.setAttribute("x", labelW + w + 8); val.setAttribute("y", y + barH / 2 + 4);
-    val.setAttribute("font-size", "11");
-    val.setAttribute("fill", "var(--text-secondary)");
-    val.textContent = fmtBytes(d.s) + " · 평균 " + d.avg_score + "점";
-    svg.appendChild(val);
+/* ---------- 디렉터리 트리 (TreeSize 스타일) ---------- */
+function makeCell(cls, text) {
+  const s = document.createElement("span");
+  if (cls) s.className = cls;
+  s.textContent = text;
+  return s;
+}
+function makeBar(pct) {
+  const bar = document.createElement("span");
+  bar.className = "tbar";
+  const fill = document.createElement("div");
+  fill.style.width = Math.max(pct, 0.5) + "%";
+  bar.appendChild(fill);
+  return bar;
+}
+function dirRow(d, depth, parentSize) {
+  const wrap = document.createElement("div");
+  const pct = parentSize > 0 ? (d.size / parentSize) * 100 : 0;
+  const row = document.createElement("div");
+  row.className = "trow dir";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.style.paddingLeft = depth * 18 + "px";
+  const caret = makeCell("caret", "▶");
+  name.appendChild(caret);
+  name.appendChild(document.createTextNode(depth === 0 ? d.path : d.name));
+  name.title = d.path;
+  row.append(
+    name,
+    makeBar(pct),
+    makeCell("num", fmtBytes(d.size)),
+    makeCell("num", pct.toFixed(1) + "%"),
+    makeCell("num", fmtNum(d.file_count)),
+    makeCell("num", d.avg_score.toFixed(1))
+  );
+  const children = document.createElement("div");
+  children.hidden = true;
+  let loaded = false;
+  row.addEventListener("click", async () => {
+    if (!loaded) {
+      loaded = true;
+      const data = await getJSON("/api/tree?path=" + encodeURIComponent(d.path));
+      data.dirs.forEach(c => children.appendChild(dirRow(c, depth + 1, d.size)));
+      data.files.forEach(f => children.appendChild(fileRow(f, depth + 1, d.size)));
+      if (data.files.length >= 100) {
+        const more = document.createElement("div");
+        more.className = "tmore";
+        more.style.paddingLeft = (depth + 1) * 18 + 26 + "px";
+        more.textContent = "… 상위 100개 파일만 표시 (나머지는 파일 목록에서 검색)";
+        children.appendChild(more);
+      }
+      if (!data.dirs.length && !data.files.length) {
+        const none = document.createElement("div");
+        none.className = "tmore";
+        none.style.paddingLeft = (depth + 1) * 18 + 26 + "px";
+        none.textContent = "(비어 있음)";
+        children.appendChild(none);
+      }
+    }
+    children.hidden = !children.hidden;
+    row.classList.toggle("open", !children.hidden);
   });
-  container.appendChild(svg);
+  wrap.append(row, children);
+  return wrap;
+}
+function fileRow(f, depth, parentSize) {
+  const pct = parentSize > 0 ? (f.size / parentSize) * 100 : 0;
+  const row = document.createElement("div");
+  row.className = "trow file";
+  const name = document.createElement("span");
+  name.className = "name";
+  name.style.paddingLeft = depth * 18 + 20 + "px";
+  name.appendChild(document.createTextNode(f.name));
+  name.title = f.path;
+  const scoreCell = document.createElement("span");
+  scoreCell.className = "num chip";
+  const dot = document.createElement("span");
+  dot.className = "dot"; dot.style.background = GRADE_COLOR[f.grade];
+  scoreCell.append(dot, document.createTextNode(f.score.toFixed(1)));
+  row.append(
+    name,
+    makeBar(pct),
+    makeCell("num", fmtBytes(f.size)),
+    makeCell("num", pct.toFixed(1) + "%"),
+    makeCell("num", "–"),
+    scoreCell
+  );
+  return row;
+}
+async function loadTree() {
+  const data = await getJSON("/api/tree");
+  const box = $("treeBox");
+  box.replaceChildren();
+  $("treeEmpty").hidden = data.dirs.length > 0;
+  const total = data.dirs.reduce((s, d) => s + d.size, 0);
+  data.dirs.forEach(d => box.appendChild(dirRow(d, 0, total)));
 }
 
 /* ---------- 파일 테이블 ---------- */
@@ -398,8 +479,8 @@ function renderFiles(files) {
 async function getJSON(url) { const r = await fetch(url); return r.json(); }
 
 async function refreshAll() {
-  const [summary, dist, dirs] = await Promise.all([
-    getJSON("/api/summary"), getJSON("/api/distribution"), getJSON("/api/top-dirs?limit=12"),
+  const [summary, dist] = await Promise.all([
+    getJSON("/api/summary"), getJSON("/api/distribution"),
   ]);
   $("tFiles").textContent = fmtNum(summary.file_count);
   $("tSize").textContent = fmtBytes(summary.total_size);
@@ -408,7 +489,7 @@ async function refreshAll() {
   $("tCleanup").textContent = fmtBytes(cleanupSize);
   renderHist(dist.buckets);
   renderGrades(summary.grades, summary.total_size);
-  renderDirs(dirs.dirs);
+  await loadTree();
   await refreshFiles();
 }
 

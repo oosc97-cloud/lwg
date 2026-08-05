@@ -24,8 +24,8 @@ Request flow: `app/static/index.html` (vanilla JS dashboard) → FastAPI endpoin
 `app/main.py` → SQLite (`data/fs_agent.db`, gitignored).
 
 - `app/config.py` — merges `config.json` over `DEFAULTS`. `resolve_scan_roots()` picks
-  the platform default when `scan_roots` is empty: Windows `C:\` (OS dirs excluded via
-  `windows_excludes`), Linux `glob("/shb*") + glob("/nbs*")`.
+  the platform default when `scan_roots` is empty: Windows `D:\` (data drive),
+  Linux `glob("/shb*") + glob("/nbs*")`.
 - `app/scoring.py` — the core scoring rule: exponential half-life decay of atime
   (weight 0.6, half-life 30d) and mtime (0.4, 90d), combined to a 0–100 score, then
   graded hot/warm/cold/stale (70/40/10 cutoffs). All parameters come from
@@ -35,7 +35,9 @@ Request flow: `app/static/index.html` (vanilla JS dashboard) → FastAPI endpoin
   errors skipped), batches upserts of 1000 rows, updates the `scans` row for live
   progress, and deletes rows for files no longer present under the scanned root.
   Runs in a daemon thread started by `POST /api/scan`; only one scan at a time
-  (guarded by `_scan_lock` in main.py).
+  (guarded by `_scan_lock` in main.py). Also accumulates per-directory totals
+  (size/count/score, propagated to every ancestor) in memory and writes them to the
+  `dirs` table at scan end — this backs the TreeSize-style lazy tree (`GET /api/tree`).
 - `app/db.py` — one short-lived connection per operation (thread safety), WAL mode.
 
 The dashboard polls `/api/scan/status` every 2s during a scan and re-renders

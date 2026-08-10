@@ -171,7 +171,7 @@
     <div class="tile"><div class="label">총 파일 수</div><div class="value" id="tFiles">–</div></div>
     <div class="tile"><div class="label">총 용량</div><div class="value" id="tSize">–</div></div>
     <div class="tile"><div class="label">평균 가치점수</div><div class="value" id="tScore">–</div><div class="note">0–100</div></div>
-    <div class="tile"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note">cold + stale 등급</div></div>
+    <div class="tile"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note">거의 안 씀 + 장기 미사용</div></div>
   </div>
 
   <div class="cards">
@@ -219,10 +219,10 @@
         </select>
         <select id="fGrade">
           <option value="">등급: 전체</option>
-          <option value="hot">hot (활발)</option>
-          <option value="warm">warm (보통)</option>
-          <option value="cold">cold (저조)</option>
-          <option value="stale">stale (방치)</option>
+          <option value="hot">자주 사용</option>
+          <option value="warm">가끔 사용</option>
+          <option value="cold">거의 안 씀</option>
+          <option value="stale">장기 미사용</option>
         </select>
         <select id="fSort">
           <option value="score:asc">점수 낮은 순</option>
@@ -248,7 +248,7 @@
 "use strict";
 const $ = id => document.getElementById(id);
 const GRADE_COLOR = { stale: "#86b6ef", cold: "#5598e7", warm: "#2a78d6", hot: "#184f95" };
-const GRADE_LABEL = { hot: "hot (활발)", warm: "warm (보통)", cold: "cold (저조)", stale: "stale (방치)" };
+const GRADE_LABEL = { hot: "자주 사용", warm: "가끔 사용", cold: "거의 안 씀", stale: "장기 미사용" };
 /* 시퀀셜 blue 램프: 점수 낮음(밝음) → 높음(어두움) */
 const SEQ = ["#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#104281"];
 
@@ -641,7 +641,7 @@ function renderFiles(files) {
     const chip = document.createElement("span"); chip.className = "chip";
     const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = GRADE_COLOR[f.grade];
     chip.appendChild(dot);
-    chip.appendChild(document.createTextNode(f.grade));
+    chip.appendChild(document.createTextNode(GRADE_LABEL[f.grade]));
     tdGrade.appendChild(chip);
     tr.append(tdPath, tdSize, tdA, tdM, tdScore, tdGrade);
     tbody.appendChild(tr);

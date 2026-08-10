@@ -52,11 +52,7 @@
     display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
     margin: 20px 0 8px;
   }
-  .scanbar input[type=text] {
-    flex: 1; min-width: 220px;
-    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px;
-  }
+  .scanbar .targets { color: var(--text-muted); font-size: 13px; }
   button.primary {
     padding: 8px 16px; border: none; border-radius: 8px;
     background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
@@ -144,8 +140,8 @@
   <p class="sub">데이터 영역의 접근시간(atime)·수정시간(mtime)을 조합해 데이터 가치점수를 산정합니다.</p>
 
   <div class="scanbar">
-    <input type="text" id="rootInput" placeholder="스캔 루트 경로 (비워두면 전체 데이터 영역)">
     <button class="primary" id="scanBtn">스캔 시작</button>
+    <span id="scanTargets" class="targets"></span>
   </div>
   <div id="scanStatus"></div>
 
@@ -542,11 +538,10 @@ async function pollStatus() {
 }
 
 $("scanBtn").addEventListener("click", async () => {
-  const root = $("rootInput").value.trim();
   const r = await fetch("/api/scan", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ root: root || null }),
+    body: JSON.stringify({ root: null }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
@@ -571,7 +566,7 @@ $("fSearch").addEventListener("input", () => {
 (async () => {
   const roots = await getJSON("/api/roots");
   if (roots.roots.length) {
-    $("rootInput").placeholder = "비워두면 전체 스캔: " + roots.roots.join(", ");
+    $("scanTargets").textContent = "대상: " + roots.roots.join(", ");
   }
   await pollStatus();
   const st = await getJSON("/api/scan/status");

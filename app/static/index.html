@@ -123,6 +123,28 @@
   .trow.file .tbar > div { opacity: .45; }
   .tmore { color: var(--text-muted); font-size: 12px; padding: 4px 6px; }
 
+  /* 격자(트리맵) 뷰 */
+  .headrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .viewtoggle { display: flex; gap: 4px; }
+  .vbtn {
+    padding: 4px 12px; font-size: 12px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-secondary);
+  }
+  .vbtn.active { background: var(--accent); color: #fff; border-color: transparent; }
+  .tm-crumb { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; color: var(--text-secondary); font-size: 12px; min-height: 26px; }
+  #tmBox { position: relative; }
+  .tm-cell {
+    position: absolute; border-radius: 4px; overflow: hidden;
+    padding: 3px 6px; font-size: 11px; line-height: 1.35; cursor: default;
+  }
+  .tm-cell.dir { cursor: pointer; }
+  .tm-cell:hover { filter: brightness(1.12); }
+  .tm-cell .nm { font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tm-cell .sz { opacity: .85; }
+  .tm-cell.inklight { color: #ffffff; }
+  .tm-cell.inkdark { color: #0b0b0b; }
+
   #tooltip {
     position: fixed; pointer-events: none; z-index: 10; display: none;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
@@ -165,12 +187,27 @@
       <div class="legend" id="gradeLegend"></div>
     </div>
     <div class="card full">
-      <h2>디렉터리 트리</h2>
-      <p class="desc">폴더를 클릭하면 펼쳐집니다 — 용량 순 정렬, 비중(%)은 상위 폴더 대비</p>
-      <div class="trow thead-row">
-        <span>이름</span><span>비중</span><span class="num">용량</span><span class="num">%</span><span class="num">파일 수</span><span class="num">평균 점수</span>
+      <div class="headrow">
+        <h2>디렉터리 트리</h2>
+        <div class="viewtoggle">
+          <button id="viewList" class="vbtn active">목록</button>
+          <button id="viewGrid" class="vbtn">격자</button>
+        </div>
       </div>
-      <div id="treeBox"></div>
+      <p class="desc" id="treeDesc">폴더를 클릭하면 펼쳐집니다 — 용량 순 정렬, 비중(%)은 상위 폴더 대비</p>
+      <div id="treeListView">
+        <div class="trow thead-row">
+          <span>이름</span><span>비중</span><span class="num">용량</span><span class="num">%</span><span class="num">파일 수</span><span class="num">평균 점수</span>
+        </div>
+        <div id="treeBox"></div>
+      </div>
+      <div id="treeGridView" hidden>
+        <div class="tm-crumb">
+          <button id="tmUp" class="vbtn" hidden>← 상위로</button>
+          <span id="tmPath"></span>
+        </div>
+        <div id="tmBox"></div>
+      </div>
       <div class="empty" id="treeEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
     </div>
     <div class="card full">
@@ -461,6 +498,130 @@ async function loadTree() {
   sel.value = [...sel.options].some(o => o.value === current) ? current : "";
 }
 
+/* ---------- 격자(트리맵) 뷰 ---------- */
+let tmStack = []; /* 드릴다운 경로 스택. 비어 있으면 루트 레벨 */
+
+function scoreColor(s) {
+  return s >= 70 ? GRADE_COLOR.hot : s >= 40 ? GRADE_COLOR.warm : s >= 10 ? GRADE_COLOR.cold : GRADE_COLOR.stale;
+}
+
+/* squarified treemap: 값 목록을 (x,y,w,h) 사각형으로 배치 */
+function treemapLayout(values, x, y, w, h) {
+  const total = values.reduce((s, d) => s + d.v, 0);
+  if (total <= 0 || w <= 0 || h <= 0) return [];
+  const items = values.map(d => ({ area: (d.v / total) * w * h, item: d.item }));
+  const rects = [];
+  let cx = x, cy = y, cw = w, ch = h;
+  let row = [];
+  const worst = (r, len) => {
+    const s = r.reduce((a, e) => a + e.area, 0);
+    let m = 0;
+    for (const e of r) {
+      const ratio = Math.max((len * len * e.area) / (s * s), (s * s) / (len * len * e.area));
+      if (ratio > m) m = ratio;
+    }
+    return m;
+  };
+  const layoutRow = () => {
+    const s = row.reduce((a, e) => a + e.area, 0);
+    if (cw >= ch) {
+      const stripW = s / ch;
+      let yy = cy;
+      for (const e of row) { const hh = e.area / stripW; rects.push({ x: cx, y: yy, w: stripW, h: hh, item: e.item }); yy += hh; }
+      cx += stripW; cw -= stripW;
+    } else {
+      const stripH = s / cw;
+      let xx = cx;
+      for (const e of row) { const ww = e.area / stripH; rects.push({ x: xx, y: cy, w: ww, h: stripH, item: e.item }); xx += ww; }
+      cy += stripH; ch -= stripH;
+    }
+  };
+  let i = 0;
+  while (i < items.length) {
+    const len = Math.min(cw, ch);
+    if (len <= 0) break;
+    const next = [...row, items[i]];
+    if (row.length === 0 || worst(next, len) <= worst(row, len)) { row = next; i++; }
+    else { layoutRow(); row = []; }
+  }
+  if (row.length) layoutRow();
+  return rects;
+}
+
+async function loadTreemap() {
+  const cur = tmStack[tmStack.length - 1];
+  const data = await getJSON(cur ? "/api/tree?path=" + encodeURIComponent(cur) : "/api/tree");
+  const nodes = [
+    ...data.dirs.map(d => ({ kind: "dir", name: cur ? d.name : d.path, path: d.path, size: d.size, count: d.file_count, score: d.avg_score })),
+    ...data.files.map(f => ({ kind: "file", name: f.name, path: f.path, size: f.size, score: f.score })),
+  ];
+  $("tmUp").hidden = tmStack.length === 0;
+  $("tmPath").textContent = cur || "전체 데이터 영역";
+  renderTreemap(nodes);
+}
+
+function renderTreemap(nodes) {
+  const box = $("tmBox");
+  box.replaceChildren();
+  const H = 360;
+  box.style.height = H + "px";
+  const W = box.clientWidth || 800;
+  if (!nodes.length) {
+    box.style.height = "auto";
+    const none = document.createElement("div");
+    none.className = "tmore";
+    none.textContent = "(비어 있음)";
+    box.appendChild(none);
+    return;
+  }
+  const vals = nodes.map(n => ({ v: Math.max(n.size, 1), item: n })).sort((a, b) => b.v - a.v);
+  treemapLayout(vals, 0, 0, W, H).forEach(r => {
+    const n = r.item;
+    const cell = document.createElement("div");
+    const ink = n.score >= 40 ? "inklight" : "inkdark"; /* hot/warm 어두운 파랑 → 흰 글자 */
+    cell.className = "tm-cell " + n.kind + " " + ink;
+    cell.style.left = (r.x + 1) + "px";
+    cell.style.top = (r.y + 1) + "px";
+    cell.style.width = Math.max(r.w - 2, 1) + "px";
+    cell.style.height = Math.max(r.h - 2, 1) + "px";
+    cell.style.background = scoreColor(n.score);
+    if (n.kind === "file") cell.style.opacity = "0.75";
+    if (r.w > 56 && r.h > 20) {
+      const nm = document.createElement("span");
+      nm.className = "nm"; nm.textContent = n.name;
+      cell.appendChild(nm);
+      if (r.h > 38) {
+        const sz = document.createElement("span");
+        sz.className = "sz"; sz.textContent = fmtBytes(n.size);
+        cell.appendChild(sz);
+      }
+    }
+    const label = n.kind === "dir"
+      ? n.path + " · " + fmtNum(n.count) + "개 · 평균 점수 " + n.score.toFixed(1)
+      : n.path + " · 점수 " + n.score.toFixed(1);
+    cell.addEventListener("pointerenter", e => showTip(e, fmtBytes(n.size), label));
+    cell.addEventListener("pointermove", moveTip);
+    cell.addEventListener("pointerleave", hideTip);
+    if (n.kind === "dir") {
+      cell.addEventListener("click", () => { hideTip(); tmStack.push(n.path); loadTreemap(); });
+    }
+    box.appendChild(cell);
+  });
+}
+
+$("tmUp").addEventListener("click", () => { tmStack.pop(); loadTreemap(); });
+$("viewList").addEventListener("click", () => {
+  $("viewList").classList.add("active"); $("viewGrid").classList.remove("active");
+  $("treeListView").hidden = false; $("treeGridView").hidden = true;
+  $("treeDesc").textContent = "폴더를 클릭하면 펼쳐집니다 — 용량 순 정렬, 비중(%)은 상위 폴더 대비";
+});
+$("viewGrid").addEventListener("click", () => {
+  $("viewGrid").classList.add("active"); $("viewList").classList.remove("active");
+  $("treeListView").hidden = true; $("treeGridView").hidden = false;
+  $("treeDesc").textContent = "면적 = 용량, 색 = 가치점수 등급 — 폴더를 클릭하면 하위로 이동";
+  loadTreemap();
+});
+
 /* ---------- 파일 테이블 ---------- */
 function renderFiles(files) {
   const tbody = $("fileRows");
@@ -502,6 +663,7 @@ async function refreshAll() {
   renderHist(dist.buckets);
   renderGrades(summary.grades, summary.total_size);
   await loadTree();
+  if (!$("treeGridView").hidden) { tmStack = []; await loadTreemap(); }
   await refreshFiles();
 }
 

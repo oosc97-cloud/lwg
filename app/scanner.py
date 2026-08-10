@@ -65,7 +65,10 @@ def purge_other_roots(roots, db_path: Path) -> None:
 
 def run_scan(root: str, cfg: dict, db_path: Path) -> int:
     score_cfg = cfg["score"]
-    exclude_paths = {_norm(p) for p in cfg.get("windows_excludes", [])} if sys.platform == "win32" else set()
+    if sys.platform == "win32":
+        exclude_paths = {_norm(p) for p in cfg.get("windows_excludes", [])}
+    else:
+        exclude_paths = {_norm(p) for p in cfg.get("linux_excludes", [])}
     exclude_names = {n.lower() for n in cfg.get("exclude_names", [])}
     now = time.time()
 

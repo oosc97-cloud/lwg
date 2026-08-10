@@ -20,6 +20,7 @@ DEFAULTS = {
         "C:\\Recovery",
         "C:\\PerfLogs",
     ],
+    "linux_excludes": ["/proc", "/sys", "/dev", "/run"],
     "exclude_names": ["$RECYCLE.BIN", "System Volume Information", "__pycache__", ".git"],
     "score": {
         "atime_weight": 0.6,

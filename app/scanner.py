@@ -35,12 +35,32 @@ def _norm(path: str) -> str:
 
 
 def run_scan_many(roots, cfg: dict, db_path: Path) -> None:
-    """여러 데이터 영역을 순차 스캔. 한 루트가 실패해도 나머지는 계속한다."""
+    """여러 데이터 영역을 순차 스캔. 한 루트가 실패해도 나머지는 계속한다.
+    스캔 전에 대상 밖 루트(과거 수동 스캔 잔재)의 데이터를 정리한다."""
+    purge_other_roots(roots, db_path)
     for root in roots:
         try:
             run_scan(root, cfg, db_path)
         except Exception:
             continue
+
+
+def purge_other_roots(roots, db_path: Path) -> None:
+    """현재 스캔 대상에 없는 루트의 files/dirs 데이터를 삭제한다."""
+    keep = {os.path.normpath(r) for r in roots}
+    conn = db.connect(db_path)
+    try:
+        rows = conn.execute("SELECT path FROM dirs WHERE parent = ''").fetchall()
+        for row in rows:
+            p = row["path"]
+            if p in keep:
+                continue
+            like = os.path.join(p, "%")
+            conn.execute("DELETE FROM files WHERE path = ? OR path LIKE ?", (p, like))
+            conn.execute("DELETE FROM dirs WHERE path = ? OR path LIKE ?", (p, like))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def run_scan(root: str, cfg: dict, db_path: Path) -> int:

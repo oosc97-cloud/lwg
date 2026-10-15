@@ -74,12 +74,12 @@ sudo bash fs-agent-install-<버전>.sh --uninstall --purge   # 전부 삭제
 - python3 3.6 이상 확인 (없으면 RHEL 8의 `/usr/libexec/platform-python` 사용)
 - 포트가 다른 프로세스에 사용 중이면 아무것도 건드리지 않고 중단
 - `/opt/fs-agent`에 프로그램 설치. 업그레이드 때 `data/`(스캔 결과)와 `config.json`(설정)은 유지하고, 새 기본 설정은 `config.json.new`로 둠
-- systemd 서비스 `fs-agent` 등록·부팅 시 자동 시작 (낮은 CPU/IO 우선순위, 실패 시 30초 후 재시도)
+- systemd 서비스 `fs-agent` 등록 후 시작 (낮은 CPU/IO 우선순위, 실패 시 30초 후 재시도). 부팅 시 자동 시작은 하지 않음: 재부팅 후 `systemctl start fs-agent`
 - 방화벽은 건드리지 않음 (필요하면 서버 관리자가 직접 포트 개방)
 - 스캔 대상이 `noatime` 마운트면 경고 (점수는 수정 시간 기준으로 보정)
 - 기동 확인 후 접속 주소(IP·호스트명) 출력
 
-설치 후 관리: `systemctl status|restart|stop fs-agent`, 로그는 `journalctl -u fs-agent`.
+설치 후 관리: `systemctl start|status|restart|stop fs-agent`, 로그는 `journalctl -u fs-agent`.
 
 ## 폐쇄망 배포
 
@@ -94,28 +94,6 @@ git archive --format=tar.gz -o fs-agent.tar.gz HEAD
 ```bash
 mkdir -p /opt/fs-agent && tar xzf fs-agent.tar.gz -C /opt/fs-agent
 cd /opt/fs-agent && ./restart.sh
-```
-
-부팅 시 자동 시작(systemd):
-
-```ini
-# /etc/systemd/system/fs-agent.service
-[Unit]
-Description=Filesystem tracking agent
-After=network.target
-
-[Service]
-WorkingDirectory=/opt/fs-agent
-ExecStart=/usr/bin/cd /opt/fs-agent && ./restart.sh
-Restart=on-failure
-RestartSec=30
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-systemctl daemon-reload && systemctl enable --now fs-agent
 ```
 
 ## 대시보드 구성 (TreeSize 방식)

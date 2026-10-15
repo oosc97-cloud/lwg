@@ -220,6 +220,8 @@ do_install() {
   chmod 750 "$PREFIX/data"
   rm -f "$PREFIX/fs-agent.pid"
 
+  # 이전 설치본이 부팅 시 자동 시작으로 등록했던 경우 해제 (유닛을 덮어쓰기 전에 해야 함)
+  [ -f "$UNIT_FILE" ] && systemctl disable "$SERVICE" >/dev/null 2>&1
   cat > "$UNIT_FILE" <<EOF
 [Unit]
 Description=파일시스템 Agent (fs-agent $VERSION)
@@ -236,12 +238,9 @@ RestartSec=30
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
-
-[Install]
-WantedBy=multi-user.target
+# 부팅 시 자동 시작하지 않음 ([Install] 없음). 재부팅 후에는 systemctl start fs-agent 로 수동 시작
 EOF
   systemctl daemon-reload
-  systemctl enable "$SERVICE" >/dev/null 2>&1 || warn "부팅 시 자동 시작 등록 실패"
   systemctl restart "$SERVICE" || die "서비스 시작 실패: journalctl -u $SERVICE 확인"
 
   # 기동 확인 (최대 15초)
@@ -261,6 +260,7 @@ EOF
     echo
     echo "  상태: systemctl status $SERVICE   로그: journalctl -u $SERVICE"
     echo "  재시작: systemctl restart $SERVICE   제거: sudo bash $0 --uninstall"
+    echo "  부팅 시 자동 시작하지 않습니다. 서버 재부팅 후에는 systemctl start $SERVICE 로 시작하세요."
   else
     journalctl -u "$SERVICE" -n 5 --no-pager 2>/dev/null
     die "서비스가 응답하지 않습니다. 위 로그와 'systemctl status $SERVICE'를 확인하세요."

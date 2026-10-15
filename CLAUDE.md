@@ -26,7 +26,7 @@ Deployed by pushing to GitHub, then cloning (test server) or `git archive` tarba
 python3 server.py                 # serve dashboard on 0.0.0.0:15891 (config.json "port"); no install step
 ./restart.sh / ./stop.sh          # start/stop only this folder's agent (cwd-matched, never pkill -f)
 ./build-installer.sh              # dist/fs-agent-install-<ver>.sh: self-extracting installer for target servers
-                                  # (installer/install-header.sh + tar.gz of runtime files only; systemd unit, keeps data/ & config.json)
+                                  # (installer/install-header.sh + tar.gz of runtime files only; systemd unit not enabled at boot, keeps data/ & config.json)
 ```
 
 No test suite or linter is configured yet.

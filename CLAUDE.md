@@ -17,7 +17,7 @@ Deployed by pushing to GitHub, then cloning (test server) or `git archive` tarba
   packages, ever. No f-string `=`, no `X | None` unions, no `ThreadingHTTPServer`
   import (3.7+) — the threaded server is hand-rolled in `server.py`.
 - UI text and code comments are in Korean; keep new user-facing strings Korean.
-- Score/grade thresholds, cleanup criteria and scan excludes belong in `config.json`, not hardcoded.
+- Score/grade thresholds, cleanup criteria and the scan include list belong in `config.json`, not hardcoded.
 - `sqlite3.connect` needs a `str` on 3.6 (path-like support is 3.7+); `db.connect` converts.
 
 ## Commands
@@ -44,10 +44,10 @@ stdlib `http.server` routing in `server.py` → SQLite (`data/fs_agent.db`, giti
   frontend reads `err.detail`). Holds the scan thread + `_scan_lock` (one scan
   at a time; `api_scan_status` reports "running" while the thread lives so
   multi-root sequential scans don't flicker to "done").
-- `app/config.py` — merges `config.json` over `DEFAULTS`. `resolve_scan_roots()`
-  picks the platform default when `scan_roots` is empty: Windows `D:\`, Linux
-  `glob("/shb*") + glob("/nbs*")`. `linux_excludes` skips `/proc` (whose `kcore`
-  reports 128TB), `/sys`, `/dev`, `/run`.
+- `app/config.py` — merges `config.json` over `DEFAULTS`. Scan scope is include-only:
+  `scan_include` {linux: ["/shb*", "/nbs*"], windows: ["D:\\"]} globbed by
+  `resolve_scan_roots()`; nothing outside is scanned (no exclude lists). No match →
+  scan refused with a message; an explicit API root must lie inside those roots.
 - `app/scoring.py` — the core rule: exponential half-life decay of atime
   (weight 0.6, half-life 30d) and mtime (0.4, 90d) → 0–100 score → grade
   hot/warm/cold/stale (70/40/10 cutoffs). Uses `max(atime, mtime)` because atime

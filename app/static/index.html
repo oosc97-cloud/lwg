@@ -1136,6 +1136,7 @@ $("resetBtn").addEventListener("click", async () => {
   await pollStatus();
   await refreshAll();
   $("scanStatus").textContent = "초기화했습니다. 스캔 시작을 눌러 새로 스캔하세요.";
+  await checkRoots();
 });
 
 let resizeTimer = null;
@@ -1146,8 +1147,21 @@ window.addEventListener("resize", () => {
 });
 
 /* ---------- 초기화 ---------- */
+/* 스캔 대상(포함 목록) 확인: 해당 폴더가 없으면 스캔 버튼을 막고 안내 */
+async function checkRoots() {
+  const r = await getJSON("/api/roots");
+  const pats = (r.include || []).join(", ");
+  $("scanBtn").title = r.roots.length ? "스캔 대상: " + r.roots.join(", ") : "";
+  if (!r.roots.length) {
+    $("scanBtn").disabled = true;
+    $("scanStatus").textContent = "스캔 대상 폴더가 없습니다 (포함 대상: " + pats + "). config.json의 scan_include를 확인하세요.";
+  }
+  return r.roots.length > 0;
+}
+
 (async () => {
   await pollStatus();
+  await checkRoots();
   await refreshAll();
 })();
 </script>

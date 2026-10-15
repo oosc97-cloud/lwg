@@ -10,19 +10,12 @@ CONFIG_PATH = BASE_DIR / "config.json"
 
 DEFAULTS = {
     "port": 15891,  # 웹 대시보드 포트 (--port로 덮어쓰기)
-    "scan_roots": [],
-    "windows_excludes": [
-        "C:\\Windows",
-        "C:\\Program Files",
-        "C:\\Program Files (x86)",
-        "C:\\ProgramData",
-        "C:\\$Recycle.Bin",
-        "C:\\System Volume Information",
-        "C:\\Recovery",
-        "C:\\PerfLogs",
-    ],
-    "linux_excludes": ["/proc", "/sys", "/dev", "/run"],
-    "exclude_names": ["$RECYCLE.BIN", "System Volume Information", "__pycache__", ".git"],
+    # 스캔 대상 (포함 목록만): 여기에 해당하는 폴더만 스캔하고 그 밖은 보지 않는다.
+    # 와일드카드(glob) 가능. 리눅스 /shb* = shb로 시작하는 최상위 폴더 전체.
+    "scan_include": {
+        "linux": ["/shb*", "/nbs*"],
+        "windows": ["D:\\"],
+    },
     "score": {
         "atime_weight": 0.6,
         "mtime_weight": 0.4,
@@ -38,7 +31,7 @@ DEFAULTS = {
     "db_path": "data/fs_agent.db",
 }
 
-NESTED_KEYS = ("score", "grades", "cleanup", "history")
+NESTED_KEYS = ("scan_include", "score", "grades", "cleanup", "history")
 
 
 def load_config() -> dict:
@@ -54,15 +47,21 @@ def load_config() -> dict:
     return cfg
 
 
+def scan_include_patterns(cfg: dict) -> List[str]:
+    """현재 플랫폼의 스캔 포함 패턴 목록."""
+    key = "windows" if sys.platform == "win32" else "linux"
+    return list(cfg.get("scan_include", {}).get(key) or [])
+
+
 def resolve_scan_roots(cfg: dict) -> List[str]:
-    """config에 명시된 루트 우선. 없으면 플랫폼 기본값:
-    Windows는 C:\\ (OS 영역은 excludes로 제외), Linux는 /shb*, /nbs* 데이터 영역."""
-    if cfg.get("scan_roots"):
-        return [str(Path(r)) for r in cfg["scan_roots"]]
-    if sys.platform == "win32":
-        return ["D:\\"]
-    roots = sorted(glob.glob("/shb*") + glob.glob("/nbs*"))
-    return [r for r in roots if Path(r).is_dir()]
+    """포함 패턴(scan_include)에 해당하는 실제 폴더 목록. 그 밖의 경로는 스캔하지 않는다."""
+    roots = []
+    for pattern in scan_include_patterns(cfg):
+        for r in sorted(glob.glob(pattern)):
+            r = str(Path(r))
+            if Path(r).is_dir() and r not in roots:
+                roots.append(r)
+    return roots
 
 
 def resolve_db_path(cfg: dict) -> Path:

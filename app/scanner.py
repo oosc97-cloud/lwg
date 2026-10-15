@@ -5,7 +5,6 @@ os.scandir 기반 반복 순회로 파일 메타데이터(size/atime/mtime)를 �
 권한 오류 디렉터리는 건너뛴다.
 """
 import os
-import sys
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -38,11 +37,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 
 class ScanCancelled(Exception):
     """사용자가 스캔을 취소함."""
-
-
-def _norm(path: str) -> str:
-    p = os.path.normpath(path)
-    return p.lower() if sys.platform == "win32" else p
 
 
 def run_scan_many(roots, cfg: dict, db_path: Path, cancel_event=None) -> None:
@@ -86,11 +80,6 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
     score_cfg = cfg["score"]
     thresholds = cfg["grades"]
     cleanup_grades = set(cfg["cleanup"]["grades"])
-    if sys.platform == "win32":
-        exclude_paths = {_norm(p) for p in cfg.get("windows_excludes", [])}
-    else:
-        exclude_paths = {_norm(p) for p in cfg.get("linux_excludes", [])}
-    exclude_names = {n.lower() for n in cfg.get("exclude_names", [])}
     now = time.time()
     host = get_host_info()
 
@@ -139,10 +128,6 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
                         if entry.is_symlink():
                             continue
                         if entry.is_dir(follow_symlinks=False):
-                            if entry.name.lower() in exclude_names:
-                                continue
-                            if exclude_paths and _norm(entry.path) in exclude_paths:
-                                continue
                             stack.append(entry.path)
                             dir_stats[entry.path]  # 빈 폴더도 트리에 표시
                         elif entry.is_file(follow_symlinks=False):

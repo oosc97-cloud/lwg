@@ -18,7 +18,7 @@ from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, unquote, urlparse
 
 from app import db, scanner
-from app.config import load_config, resolve_db_path, resolve_scan_roots
+from app.config import load_config, resolve_db_path, resolve_scan_roots, scan_include_patterns
 
 CFG = load_config()
 DB_PATH = resolve_db_path(CFG)
@@ -51,15 +51,34 @@ def _int_param(q, key, default, lo, hi):
 # ---------- API 구현 ----------
 
 def api_roots():
-    return {"roots": resolve_scan_roots(CFG)}
+    return {"roots": resolve_scan_roots(CFG), "include": scan_include_patterns(CFG)}
+
+
+def _no_roots_message():
+    pats = ", ".join(scan_include_patterns(CFG)) or "(없음)"
+    return ("스캔 대상 폴더가 없습니다. 이 서버에 포함 대상(%s)에 해당하는 폴더가 없어 아무것도 스캔하지 않습니다. "
+            "config.json의 scan_include를 확인하세요." % pats)
+
+
+def _within(path, roots):
+    p = os.path.normcase(os.path.abspath(path))
+    for r in roots:
+        r = os.path.normcase(os.path.abspath(r))
+        if p == r or p.startswith(os.path.join(r, "")):
+            return True
+    return False
 
 
 def api_start_scan(root):
-    """root 지정 시 해당 경로만, 미지정 시 모든 데이터 영역을 순차 스캔."""
+    """root 지정 시 해당 경로만(포함 대상 안이어야 함), 미지정 시 포함 대상 전체를 순차 스캔."""
     global _scan_thread
-    roots = [root] if root else resolve_scan_roots(CFG)
-    if not roots:
-        return 400, {"detail": "스캔 루트가 없습니다. config.json의 scan_roots를 확인하세요."}
+    allowed = resolve_scan_roots(CFG)
+    if not allowed:
+        return 400, {"detail": _no_roots_message()}
+    if root and not _within(root, allowed):
+        return 400, {"detail": "스캔 대상(%s) 밖의 경로는 스캔하지 않습니다: %s"
+                     % (", ".join(scan_include_patterns(CFG)), root)}
+    roots = [root] if root else allowed
     missing = [r for r in roots if not Path(r).is_dir()]
     if missing:
         return 400, {"detail": "디렉터리가 아닙니다: " + ", ".join(missing)}

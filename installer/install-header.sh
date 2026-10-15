@@ -95,6 +95,18 @@ with open(path, encoding="utf-8") as f:
     cfg = json.load(f, object_pairs_hook=OrderedDict)
 cfg["port"] = port
 cfg.move_to_end("port", last=False)
+# 이전 버전 설정 정리: 제외 목록 방식 → 포함 목록(scan_include) 방식
+for k in ("linux_excludes", "windows_excludes", "exclude_names"):
+    if cfg.pop(k, None) is not None:
+        print("[fs-agent] config.json: 더 이상 쓰지 않는 설정 '%s' 삭제 (이제 포함 대상만 스캔)" % k)
+old_roots = cfg.pop("scan_roots", None)
+if "scan_include" not in cfg:
+    inc = OrderedDict([("linux", ["/shb*", "/nbs*"]), ("windows", ["D:\\"])])
+    if old_roots:
+        inc["linux"] = list(old_roots)
+        print("[fs-agent] config.json: 기존 scan_roots %s 를 scan_include.linux 로 옮김" % old_roots)
+    items = list(cfg.items())
+    cfg = OrderedDict(items[:1] + [("scan_include", inc)] + items[1:])
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, ensure_ascii=False, indent=2)
     f.write("\n")
@@ -123,7 +135,7 @@ for r in resolve_scan_roots(load_config()):
 EOF
 )
   if [ -z "$roots" ]; then
-    warn "스캔 대상(/shb*, /nbs*)이 없습니다. 필요하면 $PREFIX/config.json의 scan_roots를 지정하세요."
+    warn "스캔 대상 폴더가 없습니다 (포함 대상: /shb*, /nbs*). 이 상태에서는 아무것도 스캔하지 않습니다. 필요하면 $PREFIX/config.json의 scan_include를 수정하세요."
     return
   fi
   info "스캔 대상: $(echo $roots)"

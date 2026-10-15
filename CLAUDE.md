@@ -25,7 +25,8 @@ Deployed by pushing to GitHub, then cloning (test server) or `git archive` tarba
 ```bash
 python3 server.py                 # serve dashboard on 0.0.0.0:15891 (config.json "port"); no install step
 ./restart.sh / ./stop.sh          # start/stop only this folder's agent (cwd-matched, never pkill -f)
-./build-installer.sh              # dist/fs-agent-install-<ver>.sh: self-extracting installer for target servers
+./build-installer.sh [--release]    # dist/fs-agent-install-<ver>.sh: self-extracting installer for target servers;
+                                  # --release also writes release/fs-agent-install.sh (committed so deploy.sh drops it on the test server)
                                   # (installer/install-header.sh + tar.gz of runtime files only; systemd unit not enabled at boot, keeps data/ & config.json)
 ```
 

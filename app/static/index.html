@@ -167,6 +167,7 @@
 <body>
 <div class="wrap">
   <h1>파일시스템 Agent</h1>
+  <p class="sub" id="hostInfo"></p>
 
   <div class="scanbar">
     <button class="primary" id="scanBtn">스캔 시작</button>
@@ -746,6 +747,7 @@ let polling = null;
 async function pollStatus() {
   const st = await getJSON("/api/scan/status");
   const el = $("scanStatus");
+  $("hostInfo").textContent = st.hostname ? "서버: " + st.hostname + (st.ip ? " (" + st.ip + ")" : "") : "";
   if (st.status === "running" || st.status === "cancelling") {
     el.textContent = (st.status === "cancelling" ? "스캔 취소 중… " : "스캔 중… ") +
       fmtNum(st.file_count) + "개 파일 · " + fmtBytes(st.total_size) + " (" + st.root + ")";

@@ -107,7 +107,7 @@ def api_summary():
             _cleanup_where()[1],
         ).fetchone()
         last = conn.execute(
-            "SELECT finished_at, root FROM scans WHERE status='done' ORDER BY id DESC LIMIT 1"
+            "SELECT finished_at, root, hostname, ip FROM scans WHERE status='done' ORDER BY id DESC LIMIT 1"
         ).fetchone()
     grades = {}
     for g in GRADES:

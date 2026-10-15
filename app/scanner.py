@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import db
+from .hostinfo import get_host_info
 from .scoring import grade, value_score
 
 BATCH_SIZE = 1000
@@ -90,10 +91,12 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
         exclude_paths = {_norm(p) for p in cfg.get("linux_excludes", [])}
     exclude_names = {n.lower() for n in cfg.get("exclude_names", [])}
     now = time.time()
+    host = get_host_info()
 
     conn = db.connect(db_path)
     cur = conn.execute(
-        "INSERT INTO scans (root, started_at, status) VALUES (?, ?, 'running')", (root, now)
+        "INSERT INTO scans (root, started_at, status, hostname, ip) VALUES (?, ?, 'running', ?, ?)",
+        (root, now, host["hostname"], host["ip"]),
     )
     scan_id = cur.lastrowid
     conn.commit()

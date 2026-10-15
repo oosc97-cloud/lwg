@@ -74,6 +74,11 @@ def init_db(db_path: Path) -> None:
             conn.execute("ALTER TABLE files ADD COLUMN dir TEXT NOT NULL DEFAULT ''")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_dir ON files(dir)")
         # dirs.cleanup_size: 정리 대상 등급 파일 용량 합 (디렉터리 순위용)
+        # scans.hostname/ip: 스캔한 서버 식별 (여러 서버 배포 대비)
+        scols = [r["name"] for r in conn.execute("PRAGMA table_info(scans)")]
+        for col in ("hostname", "ip"):
+            if col not in scols:
+                conn.execute("ALTER TABLE scans ADD COLUMN {} TEXT NOT NULL DEFAULT ''".format(col))
         dcols = [r["name"] for r in conn.execute("PRAGMA table_info(dirs)")]
         if "cleanup_size" not in dcols:
             conn.execute("ALTER TABLE dirs ADD COLUMN cleanup_size INTEGER NOT NULL DEFAULT 0")

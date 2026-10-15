@@ -57,6 +57,8 @@ stdlib `http.server` routing in `server.py` → SQLite (`data/fs_agent.db`, giti
   first-ever scan of that root drops its partial rows). On `done`, dirs up to
   `history.depth` are copied to `scan_history`, pruned to `history.keep_scans`
   per root — groundwork for phase-2 snapshot diffs (`GET /api/history`).
+- `app/hostinfo.py` — hostname + primary non-loopback IP (UDP route trick →
+  `gethostbyname_ex` → `hostname -I`), stored on each `scans` row at scan start.
 - `app/db.py` — one short-lived connection per operation (thread safety), WAL mode,
   in-place migration for the `files.dir` column.
 

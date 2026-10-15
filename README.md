@@ -90,6 +90,7 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 ## 대시보드 구성
 
 - 스캔 시작 / 스캔 취소 (취소하면 직전 완료 결과를 유지)
+- 제목 아래에 스캔한 서버의 호스트명·IP 표시 (스캔 시작 시 수집, `scans` 기록과 `/api/scan/status`에 포함)
 - KPI: 총 파일 수 · 총 용량 · 평균 가치점수 · 정리 후보 용량
 - 가치점수 분포 히스토그램 (10점 구간)
 - 등급 구성 스택바 (용량 기준)

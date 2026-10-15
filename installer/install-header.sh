@@ -3,7 +3,7 @@
 #  파일시스템 Agent 설치 파일 (자체 압축 해제형)
 #  대상: RHEL 8.x (폐쇄망), python3 3.6 이상, systemd
 #
-#  설치/업그레이드 : sudo bash fs-agent-install.sh [--port 15891] [--prefix /opt/fs-agent] [--no-firewall]
+#  설치/업그레이드 : sudo bash fs-agent-install.sh [--port 15891] [--prefix /opt/fs-agent]
 #  상태 확인       : sudo bash fs-agent-install.sh --status
 #  제거            : sudo bash fs-agent-install.sh --uninstall [--purge]
 #                    (--purge 없으면 스캔 결과 data/와 config.json은 남김)
@@ -15,7 +15,6 @@ TMPD=""
 SERVICE="fs-agent"
 PREFIX="/opt/fs-agent"
 PORT=""
-FIREWALL=1
 ACTION="install"
 PURGE=0
 EXTRACT_DIR=""
@@ -32,7 +31,6 @@ while [ $# -gt 0 ]; do
     --port=*) PORT="${1#*=}"; shift ;;
     --prefix) PREFIX="${2:-}"; shift 2 ;;
     --prefix=*) PREFIX="${1#*=}"; shift ;;
-    --no-firewall) FIREWALL=0; shift ;;
     --uninstall) ACTION="uninstall"; shift ;;
     --purge) PURGE=1; shift ;;
     --status) ACTION="status"; shift ;;
@@ -103,8 +101,6 @@ with open(path, "w", encoding="utf-8") as f:
 EOF
 }
 
-firewalld_active() { command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; }
-
 host_urls() {
   local ips ip
   ips=$(hostname -I 2>/dev/null)
@@ -161,18 +157,11 @@ do_status() {
 
 do_uninstall() {
   need_root
-  PY=$(find_python) || PY=python3
-  local port=15891
-  [ -f "$PREFIX/config.json" ] && port=$(config_port "$PREFIX/config.json")
   if [ -f "$UNIT_FILE" ]; then
     systemctl disable --now "$SERVICE" >/dev/null 2>&1
     rm -f "$UNIT_FILE"
     systemctl daemon-reload
     info "서비스 중지·삭제 완료"
-  fi
-  if firewalld_active && firewall-cmd --permanent --query-port="$port/tcp" >/dev/null 2>&1; then
-    firewall-cmd --permanent --remove-port="$port/tcp" >/dev/null && firewall-cmd --reload >/dev/null
-    info "방화벽 $port/tcp 닫음"
   fi
   [ -d "$PREFIX" ] || { info "설치 폴더가 없습니다: $PREFIX"; return; }
   case "$PREFIX" in /|/opt|/usr|/etc|/root|/home|"") die "설치 폴더 경로가 위험해 삭제하지 않습니다: $PREFIX" ;; esac
@@ -254,16 +243,6 @@ EOF
   systemctl daemon-reload
   systemctl enable "$SERVICE" >/dev/null 2>&1 || warn "부팅 시 자동 시작 등록 실패"
   systemctl restart "$SERVICE" || die "서비스 시작 실패: journalctl -u $SERVICE 확인"
-
-  if [ "$FIREWALL" = 1 ] && firewalld_active; then
-    if [ -n "$old_port" ] && [ "$old_port" != "$PORT" ] && firewall-cmd --permanent --query-port="$old_port/tcp" >/dev/null 2>&1; then
-      firewall-cmd --permanent --remove-port="$old_port/tcp" >/dev/null
-    fi
-    firewall-cmd --permanent --add-port="$PORT/tcp" >/dev/null && firewall-cmd --reload >/dev/null \
-      && info "방화벽(firewalld) $PORT/tcp 열림" || warn "방화벽 포트를 열지 못했습니다: firewall-cmd --permanent --add-port=$PORT/tcp"
-  elif [ "$FIREWALL" = 1 ]; then
-    info "firewalld가 꺼져 있어 방화벽 설정은 건너뜁니다."
-  fi
 
   # 기동 확인 (최대 15초)
   local ok=0 i

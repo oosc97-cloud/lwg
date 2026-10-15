@@ -75,7 +75,7 @@ sudo bash fs-agent-install-<버전>.sh --uninstall --purge   # 전부 삭제
 - 포트가 다른 프로세스에 사용 중이면 아무것도 건드리지 않고 중단
 - `/opt/fs-agent`에 프로그램 설치. 업그레이드 때 `data/`(스캔 결과)와 `config.json`(설정)은 유지하고, 새 기본 설정은 `config.json.new`로 둠
 - systemd 서비스 `fs-agent` 등록·부팅 시 자동 시작 (낮은 CPU/IO 우선순위, 실패 시 30초 후 재시도)
-- firewalld가 켜져 있으면 포트 개방 (`--no-firewall`로 생략)
+- 방화벽은 건드리지 않음 (필요하면 서버 관리자가 직접 포트 개방)
 - 스캔 대상이 `noatime` 마운트면 경고 (점수는 수정 시간 기준으로 보정)
 - 기동 확인 후 접속 주소(IP·호스트명) 출력
 

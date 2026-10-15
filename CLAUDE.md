@@ -62,6 +62,12 @@ stdlib `http.server` routing in `server.py` → SQLite (`data/fs_agent.db`, giti
 - `app/db.py` — one short-lived connection per operation (thread safety), WAL mode,
   in-place migration for the `files.dir` column.
 
+The dashboard is a TreeSize-style two-pane explorer: lazy folder tree on the
+left (`/api/tree?files_limit=0`), tabs on the right that all scope to the
+selected folder (`path`/`root` params; `_under()` in `server.py` builds the
+`dir = ? OR dir LIKE ? ESCAPE` filter). `dirs` also stores `dir_count`
+(recursive), `alloc_size` (`st_blocks*512`), `last_mtime`/`last_atime`.
+
 The dashboard polls `/api/scan/status` every 2s during a scan and re-renders from
 aggregate endpoints when it finishes. Charts are hand-built SVG; the treemap is a
 hand-rolled squarified layout; dynamic strings go through `textContent` only

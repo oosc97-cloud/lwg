@@ -25,8 +25,9 @@ ON CONFLICT(path) DO UPDATE SET
 """
 
 DIR_INSERT = """
-INSERT OR REPLACE INTO dirs (path, parent, name, depth, size, file_count, score_sum, scan_id, cleanup_size)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT OR REPLACE INTO dirs (path, parent, name, depth, size, file_count, score_sum, scan_id,
+                             cleanup_size, dir_count, last_mtime, last_atime, alloc_size)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 HISTORY_INSERT = """
@@ -104,9 +105,9 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
     batch = []
     file_count = 0
     total_size = 0
-    # TreeSize식 트리 뷰용: 디렉터리별 [누적 용량, 파일 수, 점수 합, 정리 대상 용량]
-    # (조상 디렉터리까지 전파)
-    dir_stats = defaultdict(lambda: [0, 0, 0.0, 0])
+    # TreeSize식 트리 뷰용: 디렉터리별 [누적 용량, 파일 수, 점수 합, 정리 대상 용량,
+    # 하위 폴더 수, 최근 수정, 최근 접근, 할당 용량] (조상 디렉터리까지 전파)
+    dir_stats = defaultdict(lambda: [0, 0, 0.0, 0, 0, 0.0, 0.0, 0])
 
     def flush():
         nonlocal file_count, total_size
@@ -143,6 +144,7 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
                             if exclude_paths and _norm(entry.path) in exclude_paths:
                                 continue
                             stack.append(entry.path)
+                            dir_stats[entry.path]  # 빈 폴더도 트리에 표시
                         elif entry.is_file(follow_symlinks=False):
                             st = entry.stat(follow_symlinks=False)
                             score = value_score(
@@ -156,6 +158,10 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
                             )
                             g = grade(score, thresholds)
                             cleanup = st.st_size if g in cleanup_grades else 0
+                            eff_atime = max(st.st_atime, st.st_mtime)
+                            # 할당 용량: 블록 기준(희소 파일·작은 파일 반영). Windows는 st_blocks 없음
+                            blocks = getattr(st, "st_blocks", None)
+                            alloc = blocks * 512 if blocks is not None else st.st_size
                             rel = os.path.relpath(entry.path, root_norm)
                             top_dir = rel.split(os.sep)[0] if os.sep in rel else "(루트)"
                             ext = os.path.splitext(entry.name)[1].lower() or "(없음)"
@@ -167,6 +173,11 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
                                 stats[1] += 1
                                 stats[2] += score
                                 stats[3] += cleanup
+                                stats[7] += alloc
+                                if st.st_mtime > stats[5]:
+                                    stats[5] = st.st_mtime
+                                if eff_atime > stats[6]:
+                                    stats[6] = eff_atime
                                 if p == root_norm:
                                     break
                                 nxt = os.path.dirname(p)
@@ -201,9 +212,18 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
         # 디렉터리 집계 저장 (루트 하위 트리 전체 교체)
         conn.execute("DELETE FROM dirs WHERE path = ? OR path LIKE ?", (root_norm, like))
         history_depth = int(cfg["history"]["depth"])
+        # 하위 폴더 수(재귀): 각 폴더를 조상 폴더마다 1씩 더한다
+        for p in list(dir_stats):
+            q = p
+            while q != root_norm:
+                nxt = os.path.dirname(q)
+                if nxt == q or nxt not in dir_stats:
+                    break
+                dir_stats[nxt][4] += 1
+                q = nxt
         dir_rows = []
         history_rows = []
-        for p, (size, count, score_sum, cleanup_size) in dir_stats.items():
+        for p, (size, count, score_sum, cleanup_size, dir_count, last_mtime, last_atime, alloc_size) in dir_stats.items():
             if p == root_norm:
                 parent, depth = "", 0
             else:
@@ -211,7 +231,8 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
                 rel = os.path.relpath(p, root_norm)
                 depth = rel.count(os.sep) + 1
             name = os.path.basename(p) or p
-            dir_rows.append((p, parent, name, depth, size, count, score_sum, scan_id, cleanup_size))
+            dir_rows.append((p, parent, name, depth, size, count, score_sum, scan_id,
+                             cleanup_size, dir_count, last_mtime or None, last_atime or None, alloc_size))
             if depth <= history_depth:
                 history_rows.append(
                     (scan_id, root_norm, p, depth, size, count, score_sum, cleanup_size)

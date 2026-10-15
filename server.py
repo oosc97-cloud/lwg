@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
@@ -25,7 +26,7 @@ _scan_thread = None
 _cancel_event = threading.Event()
 
 GRADES = ("hot", "warm", "cold", "stale")
-SORT_COLUMNS = {"score": "score", "size": "size", "atime": "atime", "mtime": "mtime"}
+SORT_COLUMNS = {"score": "score", "size": "size", "atime": "atime", "mtime": "mtime", "name": "name", "path": "path"}
 DIR_SORT_COLUMNS = {"size": "size", "cleanup": "cleanup_size", "files": "file_count"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -160,9 +161,24 @@ def _dir_row(row):
         "path": row["path"],
         "name": row["name"],
         "size": row["size"],
+        "alloc_size": row["alloc_size"],
         "file_count": count,
+        "dir_count": row["dir_count"],
+        "last_mtime": row["last_mtime"],
+        "last_atime": row["last_atime"],
+        "cleanup_size": row["cleanup_size"],
         "avg_score": round(row["score_sum"] / count, 1) if count else 0.0,
     }
+
+
+def _like_escape(s):
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _under(path):
+    """files.dir 기준으로 path 폴더와 그 하위 전체를 고르는 조건."""
+    prefix = os.path.join(path, "")
+    return "(dir = ? OR dir LIKE ? ESCAPE '\\')", [path, _like_escape(prefix) + "%"]
 
 
 def api_tree(q):
@@ -174,15 +190,24 @@ def api_tree(q):
                 "SELECT * FROM dirs WHERE parent = '' ORDER BY size DESC"
             ).fetchall()
             return {"dirs": [_dir_row(r) for r in rows], "files": []}
+        node = conn.execute("SELECT * FROM dirs WHERE path = ?", (path,)).fetchone()
         drows = conn.execute(
             "SELECT * FROM dirs WHERE parent = ? ORDER BY size DESC", (path,)
         ).fetchall()
         frows = conn.execute(
-            """SELECT path, name, size, atime, mtime, score, grade
+            """SELECT path, name, ext, size, atime, mtime, score, grade
                FROM files WHERE dir = ? ORDER BY size DESC LIMIT ?""",
             (path, files_limit),
         ).fetchall()
-    return {"dirs": [_dir_row(r) for r in drows], "files": [dict(r) for r in frows]}
+        own = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM files WHERE dir = ?", (path,)
+        ).fetchone()
+    return {
+        "node": _dir_row(node) if node else None,
+        "dirs": [_dir_row(r) for r in drows],
+        "files": [dict(r) for r in frows],
+        "own_files": {"count": own["n"], "size": own["s"]},
+    }
 
 
 def api_top_dirs(q):
@@ -205,16 +230,21 @@ def api_top_dirs(q):
 
 def api_extensions(q):
     """확장자별 파일 수·용량·정리 후보 용량 (용량 큰 순)."""
-    limit = _int_param(q, "limit", 10, 1, 100)
+    limit = _int_param(q, "limit", 10, 1, 200)
     where, params = _cleanup_where()
+    scope, scope_args = ("1=1", [])
+    if q.get("path"):
+        scope, scope_args = _under(q["path"])
     with db.connect(DB_PATH) as conn:
-        total = conn.execute("SELECT COALESCE(SUM(size),0) AS s FROM files").fetchone()["s"]
+        total = conn.execute(
+            "SELECT COALESCE(SUM(size),0) AS s FROM files WHERE " + scope, scope_args
+        ).fetchone()["s"]
         rows = conn.execute(
             """SELECT ext, COUNT(*) AS n, COALESCE(SUM(size),0) AS s,
                       COALESCE(SUM(CASE WHEN {} THEN size ELSE 0 END),0) AS c,
                       ROUND(AVG(score),1) AS avg_score
-               FROM files GROUP BY ext ORDER BY s DESC LIMIT ?""".format(where),
-            params + (limit,),
+               FROM files WHERE {} GROUP BY ext ORDER BY s DESC LIMIT ?""".format(where, scope),
+            tuple(params) + tuple(scope_args) + (limit,),
         ).fetchall()
     return {
         "total_size": total,
@@ -224,6 +254,31 @@ def api_extensions(q):
             for r in rows
         ],
     }
+
+
+AGE_BUCKETS = [(30, "1개월 이내"), (90, "1~3개월"), (180, "3~6개월"), (365, "6개월~1년"),
+               (730, "1~2년"), (1095, "2~3년"), (None, "3년 초과")]
+
+
+def api_age(q):
+    """파일 나이 분포 (TreeSize 'Age of Files'). by=mtime(수정, 기본)|atime(접근)."""
+    col = "MAX(atime, mtime)" if q.get("by") == "atime" else "mtime"
+    scope, scope_args = ("1=1", [])
+    if q.get("path"):
+        scope, scope_args = _under(q["path"])
+    cases = " ".join(
+        "WHEN age < {} THEN {}".format(days, i) for i, (days, _) in enumerate(AGE_BUCKETS) if days
+    )
+    sql = """SELECT CASE {} ELSE {} END AS b, COUNT(*) AS n, COALESCE(SUM(size),0) AS s
+             FROM (SELECT size, (? - {}) / 86400.0 AS age FROM files WHERE {})
+             GROUP BY b""".format(cases, len(AGE_BUCKETS) - 1, col, scope)
+    with db.connect(DB_PATH) as conn:
+        rows = conn.execute(sql, [time.time()] + scope_args).fetchall()
+    buckets = [{"label": label, "file_count": 0, "size": 0} for _, label in AGE_BUCKETS]
+    for r in rows:
+        buckets[r["b"]]["file_count"] = r["n"]
+        buckets[r["b"]]["size"] = r["s"]
+    return {"by": "atime" if q.get("by") == "atime" else "mtime", "buckets": buckets}
 
 
 def api_changes(q):
@@ -312,8 +367,9 @@ def api_files(q):
     where, params = [], []
     root = q.get("root")
     if root:
-        where.append("(path LIKE ? OR dir = ?)")
-        params.extend([os.path.join(root, "%"), root])
+        cond, args = _under(root)
+        where.append(cond)
+        params.extend(args)
     if q.get("grade") in GRADES:
         where.append("grade = ?")
         params.append(q["grade"])
@@ -403,6 +459,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(api_cleanup_candidates(q))
             if route == "/api/extensions":
                 return self._send_json(api_extensions(q))
+            if route == "/api/age":
+                return self._send_json(api_age(q))
             if route == "/api/changes":
                 return self._send_json(api_changes(q))
             if route == "/api/history":

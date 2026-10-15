@@ -7,277 +7,331 @@
 <style>
   :root {
     color-scheme: light;
-    --page: #f9f9f7;
+    --page: #f3f3f1;
     --surface-1: #fcfcfb;
+    --surface-2: #f0f0ed;
     --text-primary: #0b0b0b;
     --text-secondary: #52514e;
     --text-muted: #898781;
     --grid: #e1e0d9;
     --baseline: #c3c2b7;
-    --border: rgba(11,11,11,0.10);
+    --border: rgba(11,11,11,0.12);
     --accent: #2a78d6;
-    /* 등급 ordinal 램프 (blue 250/350/450/600) — 라이트/다크 공통 유효 범위 */
-    --g-stale: #86b6ef;
-    --g-cold: #5598e7;
-    --g-warm: #2a78d6;
-    --g-hot: #184f95;
+    --select: rgba(42,120,214,0.14);
+    --hover: rgba(11,11,11,0.04);
+    --folder: #d9a227;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
       --page: #0d0d0d;
       --surface-1: #1a1a19;
+      --surface-2: #232321;
       --text-primary: #ffffff;
       --text-secondary: #c3c2b7;
       --text-muted: #898781;
       --grid: #2c2c2a;
       --baseline: #383835;
-      --border: rgba(255,255,255,0.10);
+      --border: rgba(255,255,255,0.12);
       --accent: #3987e5;
+      --select: rgba(57,135,229,0.24);
+      --hover: rgba(255,255,255,0.05);
+      --folder: #e0b13f;
     }
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
     background: var(--page);
     color: var(--text-primary);
     font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
-    font-size: 14px;
+    font-size: 13px;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
-  h1 { font-size: 20px; font-weight: 600; margin: 0; }
-  .sub { color: var(--text-secondary); margin: 4px 0 0; font-size: 13px; }
+  .app { display: flex; flex-direction: column; min-height: 100vh; padding: 12px 14px 14px; gap: 10px; }
 
-  .scanbar {
-    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    margin: 20px 0 8px;
-  }
-  button.primary {
-    padding: 8px 16px; border: none; border-radius: 8px;
-    background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
-    cursor: pointer;
-  }
-  button.primary:disabled { opacity: .5; cursor: default; }
-  button.secondary {
-    padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px;
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px; cursor: pointer;
-  }
-  button.secondary:disabled { opacity: .5; cursor: default; }
-  .headrow select {
-    padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+  /* 상단 툴바 */
+  .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  #hostInfo { color: var(--text-secondary); font-size: 12px; }
+  .spacer { flex: 1; }
+  .tool { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; }
+  select, input[type=text] {
+    padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
     background: var(--surface-1); color: var(--text-primary); font-size: 12px;
   }
-  #scanStatus { color: var(--text-secondary); font-size: 13px; min-height: 18px; margin-bottom: 16px; }
-
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .tile {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px 16px;
+  button { font-family: inherit; }
+  button.primary {
+    padding: 6px 14px; border: none; border-radius: 6px;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
   }
-  .tile .label { color: var(--text-secondary); font-size: 12px; }
-  .tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
-  .tile .note { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
-
-  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-  @media (max-width: 820px) { .cards { grid-template-columns: 1fr; } }
-  .card {
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
-    padding: 16px; overflow-x: auto;
+  button.secondary, button.ghost {
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 12px; cursor: pointer;
   }
-  .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; }
-  .card .desc { color: var(--text-muted); font-size: 12px; margin: 0 0 12px; }
-  .card.full { grid-column: 1 / -1; }
+  button:disabled { opacity: .5; cursor: default; }
+  #scanStatus { color: var(--text-secondary); font-size: 12px; }
 
-  .xbar { display: inline-block; width: 90px; height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
-  .xbar > span { display: block; height: 100%; background: var(--accent); }
+  /* KPI 스트립 */
+  .kpis { display: flex; gap: 8px; flex-wrap: wrap; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; min-width: 130px; }
+  .kpi .label { color: var(--text-muted); font-size: 11px; }
+  .kpi .value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kpi .note { color: var(--text-muted); font-size: 11px; }
+
+  /* 경로 표시줄 */
+  .pathbar {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .crumb { border: none; background: none; color: var(--text-primary); padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .crumb:hover { background: var(--hover); }
+  .crumb.cur { font-weight: 600; }
+  .crumb-sep { color: var(--text-muted); }
+
+  /* 2단 레이아웃 */
+  .panes { display: grid; grid-template-columns: minmax(320px, 36%) 1fr; gap: 10px; flex: 1; }
+  @media (max-width: 960px) { .panes { grid-template-columns: 1fr; } }
+  .pane {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+    height: calc(100vh - 190px); min-height: 520px;
+  }
+  .pane-body { flex: 1; overflow: auto; }
+
+  /* 폴더 트리 */
+  .tr-row {
+    display: grid; grid-template-columns: minmax(120px, 1fr) 64px 70px 48px;
+    gap: 6px; align-items: center; padding: 2px 8px 2px 4px; cursor: default; user-select: none;
+    white-space: nowrap;
+  }
+  .tr-row:hover { background: var(--hover); }
+  .tr-row.sel { background: var(--select); }
+  .tr-head { color: var(--text-muted); font-size: 11px; position: sticky; top: 0; background: var(--surface-1); border-bottom: 1px solid var(--grid); padding-top: 5px; padding-bottom: 5px; z-index: 1; }
+  .tr-head:hover { background: var(--surface-1); }
+  .tr-name { display: flex; align-items: center; gap: 4px; overflow: hidden; }
+  .tr-name .lbl { overflow: hidden; text-overflow: ellipsis; }
+  .caret { width: 14px; flex: none; text-align: center; color: var(--text-muted); font-size: 9px; cursor: pointer; transition: transform .1s; }
+  .caret.open { transform: rotate(90deg); }
+  .caret.none { visibility: hidden; }
+  .ico { width: 14px; height: 10px; flex: none; border-radius: 2px; display: inline-block; }
+  .ico.folder { background: var(--folder); position: relative; margin-top: 3px; }
+  .ico.folder::before { content: ""; position: absolute; left: 0; top: -3px; width: 6px; height: 4px; background: var(--folder); border-radius: 2px 2px 0 0; }
+  .ico.files { border: 1.5px solid var(--text-muted); width: 10px; height: 12px; border-radius: 1px; margin: 0 2px; }
+  .ico.root { background: var(--text-secondary); border-radius: 3px; height: 12px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pbar { height: 10px; background: var(--grid); border-radius: 2px; overflow: hidden; }
+  .pbar > div { height: 100%; background: var(--accent); }
+  .tr-row.filesrow { color: var(--text-secondary); font-style: italic; }
+  .tr-row.filesrow .pbar > div { opacity: .5; }
+
+  /* 탭 */
+  .tabs { display: flex; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--grid); background: var(--surface-2); overflow-x: auto; flex: none; }
+  .tab {
+    padding: 8px 12px; border: none; background: none; color: var(--text-secondary); font-size: 12px;
+    cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  .tab.active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabpane { padding: 10px 12px; }
+  .tabtools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; color: var(--text-secondary); font-size: 12px; }
+  .folderinfo { color: var(--text-secondary); font-size: 12px; margin-bottom: 8px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 11px; position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text-primary); }
+  th .arrow { font-size: 9px; margin-left: 3px; }
+  tbody tr:hover { background: var(--hover); }
+  tr.dirrow { cursor: pointer; }
+  td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  td.name .cell { display: inline-flex; align-items: center; gap: 6px; }
+  td.path { max-width: 380px; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+  td.barcell { min-width: 120px; }
+  .barwrap { display: flex; align-items: center; gap: 6px; }
+  .barwrap .pbar { flex: 1; min-width: 50px; }
+  .barwrap span { width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   .delta-up { color: #c2410c; }
   .delta-down { color: #15803d; }
   @media (prefers-color-scheme: dark) { .delta-up { color: #fb923c; } .delta-down { color: #4ade80; } }
-  .chgsum { white-space: pre-line; font-size: 13px; color: var(--text-secondary); margin: 0 0 10px; }
+  .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+  .muted { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
 
-  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-  .filters select, .filters input {
-    padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
-    background: var(--surface-1); color: var(--text-primary); font-size: 13px;
-  }
-  table { border-collapse: collapse; width: 100%; font-size: 13px; }
-  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-  th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.path { max-width: 420px; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
-  .chip { display: inline-flex; align-items: center; gap: 6px; }
-  .chip .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  /* 차트 */
+  .chartwrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .chartwrap svg { flex: none; }
+  .legend { flex: 1; min-width: 280px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .hbar-row { display: grid; grid-template-columns: 100px 1fr 210px; gap: 10px; align-items: center; margin: 7px 0; }
+  .hbar { height: 18px; background: var(--grid); border-radius: 3px; overflow: hidden; }
+  .hbar > div { height: 100%; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { border: none; background: var(--surface-1); color: var(--text-secondary); padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .seg button.active { background: var(--accent); color: #fff; }
 
-  /* 디렉터리 트리 (TreeSize 스타일) */
-  .trow {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) 150px 90px 56px 80px 76px;
-    gap: 10px; align-items: center;
-    padding: 4px 6px; border-radius: 6px;
-    font-size: 13px; min-width: 700px;
-  }
-  .thead-row { color: var(--text-muted); font-size: 12px; border-bottom: 1px solid var(--grid); border-radius: 0; padding-bottom: 6px; margin-bottom: 4px; }
-  .trow.dir { cursor: pointer; }
-  .trow.dir:hover { background: var(--page); }
-  .trow .name { display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .trow .caret { width: 14px; flex: none; color: var(--text-muted); transition: transform .12s; font-size: 11px; }
-  .trow.open > .name .caret, .trow.open .caret { transform: rotate(90deg); }
-  .trow.file .name { color: var(--text-secondary); }
-  .trow .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .tbar { height: 12px; background: var(--grid); border-radius: 4px; overflow: hidden; }
-  .tbar > div { height: 100%; background: var(--accent); border-radius: 4px; min-width: 2px; }
-  .trow.file .tbar > div { opacity: .45; }
-  .tmore { color: var(--text-muted); font-size: 12px; padding: 4px 6px; }
-
-  /* 격자(트리맵) 뷰 */
-  .headrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-  .viewtoggle { display: flex; gap: 4px; }
-  .vbtn {
-    padding: 4px 12px; font-size: 12px; cursor: pointer;
-    border: 1px solid var(--border); border-radius: 6px;
-    background: var(--surface-1); color: var(--text-secondary);
-  }
-  .vbtn.active { background: var(--accent); color: #fff; border-color: transparent; }
-  .tm-crumb { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; color: var(--text-secondary); font-size: 12px; min-height: 26px; }
+  /* 트리맵 */
   #tmBox { position: relative; }
-  .tm-cell {
-    position: absolute; border-radius: 4px; overflow: hidden;
-    padding: 3px 6px; font-size: 11px; line-height: 1.35; cursor: default;
-  }
+  .tm-cell { position: absolute; border-radius: 3px; overflow: hidden; padding: 3px 5px; font-size: 11px; line-height: 1.35; }
   .tm-cell.dir { cursor: pointer; }
   .tm-cell:hover { filter: brightness(1.12); }
   .tm-cell .nm { font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tm-cell .sz { opacity: .85; }
   .tm-cell.inklight { color: #ffffff; }
   .tm-cell.inkdark { color: #0b0b0b; }
 
   #tooltip {
-    position: fixed; pointer-events: none; z-index: 10; display: none;
-    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    position: fixed; pointer-events: none; z-index: 10; display: none; max-width: 480px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 9px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
   }
-  #tooltip .t-val { font-weight: 600; font-size: 13px; }
-  #tooltip .t-label { color: var(--text-secondary); }
+  #tooltip .t-val { font-weight: 600; }
+  #tooltip .t-label { color: var(--text-secondary); word-break: break-all; }
   svg text { font-family: inherit; }
-  .empty { color: var(--text-muted); padding: 20px 0; text-align: center; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>파일시스템 Agent</h1>
-  <p class="sub" id="hostInfo"></p>
-
-  <div class="scanbar">
+<div class="app">
+  <div class="topbar">
+    <h1>파일시스템 Agent</h1>
+    <span id="hostInfo"></span>
     <button class="primary" id="scanBtn">스캔 시작</button>
     <button class="secondary" id="cancelBtn" hidden>스캔 취소</button>
+    <span id="scanStatus"></span>
+    <span class="spacer"></span>
+    <label class="tool">기준
+      <select id="metricSel">
+        <option value="size">용량</option>
+        <option value="alloc_size">할당 용량</option>
+        <option value="file_count">파일 수</option>
+      </select>
+    </label>
+    <label class="tool">단위
+      <select id="unitSel">
+        <option value="auto">자동</option>
+        <option value="KB">KB</option>
+        <option value="MB">MB</option>
+        <option value="GB">GB</option>
+      </select>
+    </label>
   </div>
-  <div id="scanStatus"></div>
 
-  <div class="tiles">
-    <div class="tile"><div class="label">총 파일 수</div><div class="value" id="tFiles">–</div></div>
-    <div class="tile"><div class="label">총 용량</div><div class="value" id="tSize">–</div></div>
-    <div class="tile"><div class="label">평균 가치점수</div><div class="value" id="tScore">–</div><div class="note">0–100</div></div>
-    <div class="tile"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note" id="tCleanupNote">거의 안 씀 + 장기 미사용</div></div>
+  <div class="kpis">
+    <div class="kpi"><div class="label">총 용량</div><div class="value" id="tSize">–</div></div>
+    <div class="kpi"><div class="label">총 파일 수</div><div class="value" id="tFiles">–</div></div>
+    <div class="kpi"><div class="label">총 폴더 수</div><div class="value" id="tDirs">–</div></div>
+    <div class="kpi"><div class="label">평균 가치점수</div><div class="value" id="tScore">–</div></div>
+    <div class="kpi"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note" id="tCleanupNote"></div></div>
   </div>
 
-  <div class="cards">
-    <div class="card">
-      <h2>확장자별 용량</h2>
-      <p class="desc">어떤 종류의 파일이 용량을 차지하는지 — 정리 후보 용량 함께 표시</p>
-      <table>
-        <thead><tr><th>확장자</th><th class="num">파일 수</th><th>용량</th><th class="num">정리 후보</th></tr></thead>
-        <tbody id="extRows"></tbody>
-      </table>
-      <div class="empty" id="extEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
-    </div>
-    <div class="card">
-      <h2>직전 스캔 대비 변화</h2>
-      <p class="desc">최근 두 번의 완료 스캔 비교 — 1단계 하위 디렉터리 중 변화가 큰 순</p>
-      <div id="chgSummary" class="chgsum"></div>
-      <table>
-        <thead><tr><th>디렉터리</th><th class="num">현재 용량</th><th class="num">용량 변화</th><th class="num">파일 수 변화</th></tr></thead>
-        <tbody id="chgRows"></tbody>
-      </table>
-      <div class="empty" id="chgEmpty" hidden>비교할 이전 스캔이 없습니다. 스캔을 한 번 더 실행하면 변화가 표시됩니다.</div>
-    </div>
-    <div class="card full">
-      <div class="headrow">
-        <h2>디렉터리 트리</h2>
-        <div class="viewtoggle">
-          <button id="viewList" class="vbtn active">목록</button>
-          <button id="viewGrid" class="vbtn">격자</button>
-        </div>
-      </div>
-      <p class="desc" id="treeDesc">폴더를 클릭하면 펼쳐집니다 — 용량 순 정렬, 비중(%)은 상위 폴더 대비</p>
-      <div id="treeListView">
-        <div class="trow thead-row">
-          <span>이름</span><span>비중</span><span class="num">용량</span><span class="num">%</span><span class="num">파일 수</span><span class="num">평균 점수</span>
-        </div>
+  <div class="pathbar">
+    <button class="ghost" id="upBtn" title="상위 폴더">↑ 상위</button>
+    <div id="crumbs"></div>
+  </div>
+
+  <div class="panes">
+    <div class="pane">
+      <div class="pane-body" id="treePane">
+        <div class="tr-row tr-head"><span>폴더</span><span>상위 대비</span><span class="num" id="treeMetricHead">용량</span><span class="num">%</span></div>
         <div id="treeBox"></div>
       </div>
-      <div id="treeGridView" hidden>
-        <div class="tm-crumb">
-          <button id="tmUp" class="vbtn" hidden>← 상위로</button>
-          <span id="tmPath"></span>
-        </div>
-        <div id="tmBox"></div>
-      </div>
-      <div class="empty" id="treeEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
     </div>
-    <div class="card full">
-      <div class="headrow">
-        <h2>디렉터리 순위</h2>
-        <div class="viewtoggle">
-          <select id="rDepth">
-            <option value="1">1단계 하위</option>
-            <option value="2">2단계 하위</option>
-            <option value="3">3단계 하위</option>
-          </select>
-          <select id="rSort">
-            <option value="size">용량 큰 순</option>
-            <option value="cleanup">정리 후보 용량 큰 순</option>
-            <option value="files">파일 수 많은 순</option>
-          </select>
+    <div class="pane">
+      <div class="tabs">
+        <button class="tab active" data-tab="details">상세</button>
+        <button class="tab" data-tab="chart">차트</button>
+        <button class="tab" data-tab="ext">확장자</button>
+        <button class="tab" data-tab="age">파일 나이</button>
+        <button class="tab" data-tab="top">상위 파일</button>
+        <button class="tab" data-tab="map">트리맵</button>
+        <button class="tab" data-tab="search">파일 검색</button>
+        <button class="tab" data-tab="changes">변화</button>
+      </div>
+      <div class="pane-body" id="tabBody">
+        <div class="tabpane" id="tab-details">
+          <div class="folderinfo" id="folderInfo"></div>
+          <table>
+            <thead><tr id="detHead"></tr></thead>
+            <tbody id="detRows"></tbody>
+          </table>
+          <div class="empty" id="detEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
+          <div class="muted" id="detMore" hidden></div>
+        </div>
+        <div class="tabpane" id="tab-chart" hidden>
+          <div class="tabtools" id="chartTitle"></div>
+          <div class="chartwrap">
+            <svg id="pie" width="260" height="260" viewBox="0 0 260 260"></svg>
+            <div class="legend">
+              <table>
+                <thead><tr><th></th><th>이름</th><th class="num" id="chartValHead">용량</th><th class="num">%</th></tr></thead>
+                <tbody id="chartRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="tabpane" id="tab-ext" hidden>
+          <div class="tabtools">선택한 폴더 하위 전체 기준 · 용량 큰 순 상위 50개</div>
+          <table>
+            <thead><tr><th>확장자</th><th class="num">파일 수</th><th class="num">용량</th><th>비중</th><th class="num">정리 후보</th><th class="num">평균 점수</th></tr></thead>
+            <tbody id="extRows"></tbody>
+          </table>
+          <div class="empty" id="extEmpty" hidden>파일이 없습니다.</div>
+        </div>
+        <div class="tabpane" id="tab-age" hidden>
+          <div class="tabtools">
+            <span class="seg"><button id="ageM" class="active">수정 시간</button><button id="ageA">접근 시간</button></span>
+            <span>선택한 폴더 하위 전체 · 마지막 수정(또는 접근) 후 지난 기간별 용량</span>
+          </div>
+          <div id="ageBox"></div>
+        </div>
+        <div class="tabpane" id="tab-top" hidden>
+          <div class="tabtools">선택한 폴더 하위에서 가장 큰 파일 100개 · 더블클릭하면 그 폴더로 이동</div>
+          <table>
+            <thead><tr><th>이름</th><th>위치</th><th class="num">용량</th><th>최근 수정</th><th>최근 접근</th><th class="num">점수</th><th>등급</th></tr></thead>
+            <tbody id="topRows"></tbody>
+          </table>
+          <div class="empty" id="topEmpty" hidden>파일이 없습니다.</div>
+        </div>
+        <div class="tabpane" id="tab-map" hidden>
+          <div class="tabtools" id="mapLegend"></div>
+          <div id="tmBox"></div>
+        </div>
+        <div class="tabpane" id="tab-search" hidden>
+          <div class="tabtools">
+            <select id="fGrade">
+              <option value="">등급: 전체</option>
+              <option value="hot">자주 사용</option>
+              <option value="warm">가끔 사용</option>
+              <option value="cold">거의 안 씀</option>
+              <option value="stale">장기 미사용</option>
+            </select>
+            <select id="fSort">
+              <option value="score:asc">점수 낮은 순</option>
+              <option value="size:desc">용량 큰 순</option>
+              <option value="atime:asc">접근 오래된 순</option>
+              <option value="mtime:asc">수정 오래된 순</option>
+              <option value="name:asc">이름 순</option>
+            </select>
+            <input type="text" id="fSearch" placeholder="경로·이름 검색">
+            <span id="fScope"></span>
+          </div>
+          <table>
+            <thead><tr><th>경로</th><th class="num">용량</th><th>최근 접근</th><th>최근 수정</th><th class="num">점수</th><th>등급</th></tr></thead>
+            <tbody id="fileRows"></tbody>
+          </table>
+          <div class="empty" id="fileEmpty" hidden>조건에 맞는 파일이 없습니다.</div>
+        </div>
+        <div class="tabpane" id="tab-changes" hidden>
+          <div class="tabtools">최근 두 번의 완료 스캔 비교 · 1단계 하위 폴더 중 변화가 큰 순</div>
+          <div id="chgSummary" class="folderinfo" style="white-space: pre-line"></div>
+          <table>
+            <thead><tr><th>폴더</th><th class="num">현재 용량</th><th class="num">용량 변화</th><th class="num">파일 수 변화</th><th class="num">정리 후보 변화</th></tr></thead>
+            <tbody id="chgRows"></tbody>
+          </table>
+          <div class="empty" id="chgEmpty" hidden>비교할 이전 스캔이 없습니다. 스캔을 한 번 더 실행하면 변화가 표시됩니다.</div>
         </div>
       </div>
-      <p class="desc">스캔 루트 기준 깊이별 디렉터리 — 어디를 먼저 정리할지 찾기</p>
-      <table>
-        <thead>
-          <tr><th>디렉터리</th><th class="num">용량</th><th class="num">정리 후보 용량</th><th class="num">비중</th><th class="num">파일 수</th><th class="num">평균 점수</th></tr>
-        </thead>
-        <tbody id="rankRows"></tbody>
-      </table>
-      <div class="empty" id="rankEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
-    </div>
-    <div class="card full">
-      <h2>파일 목록</h2>
-      <p class="desc">정리 후보 탐색 — 저가치·대용량 순 기본 정렬</p>
-      <div class="filters">
-        <select id="fRoot">
-          <option value="">디렉터리: 전체</option>
-        </select>
-        <select id="fGrade">
-          <option value="">등급: 전체</option>
-          <option value="hot">자주 사용</option>
-          <option value="warm">가끔 사용</option>
-          <option value="cold">거의 안 씀</option>
-          <option value="stale">장기 미사용</option>
-        </select>
-        <select id="fSort">
-          <option value="score:asc">점수 낮은 순</option>
-          <option value="size:desc">용량 큰 순</option>
-          <option value="atime:asc">접근 오래된 순</option>
-          <option value="mtime:asc">수정 오래된 순</option>
-        </select>
-        <input type="text" id="fSearch" placeholder="경로 검색">
-      </div>
-      <table>
-        <thead>
-          <tr><th>경로</th><th class="num">용량</th><th>마지막 접근</th><th>마지막 수정</th><th class="num">점수</th><th>등급</th></tr>
-        </thead>
-        <tbody id="fileRows"></tbody>
-      </table>
-      <div class="empty" id="fileEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
     </div>
   </div>
 </div>
@@ -288,220 +342,557 @@
 const $ = id => document.getElementById(id);
 const GRADE_COLOR = { stale: "#86b6ef", cold: "#5598e7", warm: "#2a78d6", hot: "#184f95" };
 const GRADE_LABEL = { hot: "자주 사용", warm: "가끔 사용", cold: "거의 안 씀", stale: "장기 미사용" };
+const PIE_COLORS = ["#2a78d6", "#e8833a", "#3aa66a", "#c94f6d", "#8a63d2", "#d4a72c", "#2fa4b5", "#b5651d", "#5598e7", "#9a9a92"];
+const METRIC_LABEL = { size: "용량", alloc_size: "할당 용량", file_count: "파일 수" };
 
+const S = {
+  sel: "",            /* 선택한 폴더 경로. "" = 전체(가상 루트) */
+  metric: "size",
+  unit: "auto",
+  tab: "details",
+  sort: { key: "metric", dir: -1 },
+  ageBy: "mtime",
+  roots: [],
+  thresholds: { hot: 70, warm: 40, cold: 10 },
+  detail: null,       /* 선택 폴더의 /api/tree 응답 캐시 */
+};
+
+/* ---------- 포맷 ---------- */
 function fmtBytes(n) {
+  if (n == null) return "–";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  if (S.unit !== "auto") {
+    const v = n / Math.pow(1024, u.indexOf(S.unit));
+    return v.toLocaleString("ko-KR", { maximumFractionDigits: v >= 100 ? 0 : 1 }) + " " + S.unit;
+  }
   if (n === 0) return "0 B";
-  const u = ["B","KB","MB","GB","TB"];
   const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1);
   const v = n / Math.pow(1024, i);
   return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i];
 }
-const fmtNum = n => n.toLocaleString("ko-KR");
-const fmtDate = ts => {
+const fmtNum = n => (n == null ? "–" : n.toLocaleString("ko-KR"));
+const pad2 = n => String(n).padStart(2, "0");
+function fmtDate(ts) {
+  if (!ts) return "–";
   const d = new Date(ts * 1000);
-  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-};
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+function fmtDateTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return fmtDate(ts) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+function fmtMetric(v) { return S.metric === "file_count" ? fmtNum(v) : fmtBytes(v); }
+function gradeOf(score) {
+  const t = S.thresholds;
+  return score >= t.hot ? "hot" : score >= t.warm ? "warm" : score >= t.cold ? "cold" : "stale";
+}
+function pct(v, total) { return total > 0 ? v / total * 100 : 0; }
+
+/* ---------- DOM 헬퍼 (동적 문자열은 textContent만) ---------- */
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function td(text, cls, title) {
+  const c = el("td", cls, text);
+  if (title) c.title = title;
+  return c;
+}
+function bar(p) {
+  const b = el("div", "pbar");
+  const f = el("div");
+  f.style.width = Math.min(Math.max(p, 0), 100) + "%";
+  b.appendChild(f);
+  return b;
+}
+function barCell(p) {
+  const c = el("td", "barcell");
+  const w = el("div", "barwrap");
+  w.append(bar(p), el("span", null, p.toFixed(1) + "%"));
+  c.appendChild(w);
+  return c;
+}
+function gradeChip(grade) {
+  const c = el("span", "chip");
+  const dot = el("span", "dot");
+  dot.style.background = GRADE_COLOR[grade];
+  c.append(dot, document.createTextNode(GRADE_LABEL[grade]));
+  return c;
+}
+function gradeCell(grade) { const c = el("td"); c.appendChild(gradeChip(grade)); return c; }
+function emptyRow(tbody, cols, text) {
+  const tr = el("tr");
+  const c = td(text, "empty"); c.colSpan = cols;
+  tr.appendChild(c); tbody.appendChild(tr);
+}
+async function getJSON(url) {
+  const r = await fetch(url);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail || r.status);
+  return data;
+}
 
 /* ---------- 툴팁 ---------- */
 const tip = $("tooltip");
 function showTip(evt, valueText, labelText) {
-  tip.replaceChildren();
-  const v = document.createElement("div"); v.className = "t-val"; v.textContent = valueText;
-  const l = document.createElement("div"); l.className = "t-label"; l.textContent = labelText;
-  tip.append(v, l);
+  tip.replaceChildren(el("div", "t-val", valueText), el("div", "t-label", labelText));
   tip.style.display = "block";
   moveTip(evt);
 }
 function moveTip(evt) {
-  const pad = 12;
-  let x = evt.clientX + pad, y = evt.clientY + pad;
+  const p = 12;
+  let x = evt.clientX + p, y = evt.clientY + p;
   const r = tip.getBoundingClientRect();
-  if (x + r.width > window.innerWidth - 8) x = evt.clientX - r.width - pad;
-  if (y + r.height > window.innerHeight - 8) y = evt.clientY - r.height - pad;
+  if (x + r.width > window.innerWidth - 8) x = evt.clientX - r.width - p;
+  if (y + r.height > window.innerHeight - 8) y = evt.clientY - r.height - p;
   tip.style.left = x + "px"; tip.style.top = y + "px";
 }
 function hideTip() { tip.style.display = "none"; }
+function hoverTip(node, valueFn, labelFn) {
+  node.addEventListener("pointerenter", e => showTip(e, valueFn(), labelFn()));
+  node.addEventListener("pointermove", moveTip);
+  node.addEventListener("pointerleave", hideTip);
+}
 
-/* ---------- 확장자별 용량 ---------- */
-async function refreshExtensions() {
-  const data = await getJSON("/api/extensions?limit=10");
+/* ---------- 경로 계산 ---------- */
+function sepOf(p) { return p.indexOf("\\") >= 0 && p.indexOf("/") < 0 ? "\\" : "/"; }
+function rootOf(path) {
+  for (const r of S.roots) {
+    const sep = sepOf(r.path);
+    const pre = r.path.endsWith(sep) ? r.path : r.path + sep;
+    if (path === r.path || path.startsWith(pre)) return { root: r, sep, pre };
+  }
+  return null;
+}
+/* path까지의 조상 경로 목록 (스캔 루트부터, 자기 자신 포함) */
+function chainOf(path) {
+  if (!path) return [];
+  const info = rootOf(path);
+  if (!info) return [path];
+  const out = [info.root.path];
+  if (path === info.root.path) return out;
+  const segs = path.slice(info.pre.length).split(info.sep).filter(Boolean);
+  for (let i = 0; i < segs.length; i++) out.push(info.pre + segs.slice(0, i + 1).join(info.sep));
+  return out;
+}
+function baseName(p) { return p.split(/[\\/]/).filter(Boolean).pop() || p; }
+function parentOf(path) {
+  const chain = chainOf(path);
+  return chain.length >= 2 ? chain[chain.length - 2] : "";
+}
+/* 선택 폴더 기준 상대 경로 (위치 열 표시용) */
+function relPath(p) {
+  if (!S.sel) return p;
+  if (p === S.sel) return ".";
+  const sep = sepOf(S.sel);
+  const pre = S.sel.endsWith(sep) ? S.sel : S.sel + sep;
+  return p.startsWith(pre) ? p.slice(pre.length) : p;
+}
+function dirOfFile(p) { return p.slice(0, Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"))) || p; }
+
+/* ---------- 폴더 트리 (왼쪽) ---------- */
+const treeNodes = new Map(); /* path -> 노드 */
+
+function virtualRoot() {
+  const sum = k => S.roots.reduce((s, r) => s + (r[k] || 0), 0);
+  const mx = k => S.roots.reduce((m, r) => Math.max(m, r[k] || 0), 0);
+  const files = sum("file_count");
+  return {
+    path: "", name: "전체 데이터 영역", size: sum("size"), alloc_size: sum("alloc_size"),
+    file_count: files, dir_count: sum("dir_count") + S.roots.length,
+    last_mtime: mx("last_mtime") || null, last_atime: mx("last_atime") || null,
+    cleanup_size: sum("cleanup_size"),
+    avg_score: files ? S.roots.reduce((s, r) => s + r.avg_score * r.file_count, 0) / files : 0,
+  };
+}
+
+function makeTreeNode(d, depth, parent) {
+  const node = { d, depth, parent, loaded: false, open: false, kids: el("div") };
+  node.kids.hidden = true;
+  const row = el("div", "tr-row");
+  const name = el("span", "tr-name");
+  name.style.paddingLeft = depth * 14 + "px";
+  const caret = el("span", "caret", "▶");
+  const ico = el("span", "ico " + (depth === 0 ? "root" : "folder"));
+  name.append(caret, ico, el("span", "lbl", depth <= 1 ? (d.path || d.name) : d.name));
+  row.title = d.path || "전체 데이터 영역";
+  const p = parent ? pct(d[S.metric], parent.d[S.metric]) : 100;
+  row.append(name, bar(p), el("span", "num", fmtMetric(d[S.metric])), el("span", "num", p.toFixed(1) + "%"));
+  if (depth > 0 && d.dir_count === 0 && d.file_count === 0) caret.classList.add("none");
+  caret.addEventListener("click", e => { e.stopPropagation(); toggleNode(node); });
+  row.addEventListener("click", () => selectPath(d.path));
+  row.addEventListener("dblclick", () => toggleNode(node));
+  node.row = row; node.caret = caret;
+  node.wrap = el("div");
+  node.wrap.append(row, node.kids);
+  treeNodes.set(d.path, node);
+  return node;
+}
+
+async function loadChildren(node) {
+  if (node.loaded) return;
+  node.loaded = true;
+  let dirs, own = null;
+  if (node.d.path === "") {
+    dirs = S.roots;
+  } else {
+    const data = await getJSON("/api/tree?files_limit=0&path=" + encodeURIComponent(node.d.path));
+    dirs = data.dirs;
+    own = data.own_files;
+  }
+  dirs = dirs.slice().sort((a, b) => b[S.metric] - a[S.metric]);
+  dirs.forEach(c => node.kids.appendChild(makeTreeNode(c, node.depth + 1, node).wrap));
+  if (own && own.count > 0) {
+    /* TreeSize의 [파일] 행: 이 폴더 바로 아래 파일들의 합계 */
+    const v = S.metric === "file_count" ? own.count : own.size;
+    const p = pct(v, node.d[S.metric]);
+    const row = el("div", "tr-row filesrow");
+    const name = el("span", "tr-name");
+    name.style.paddingLeft = (node.depth + 1) * 14 + "px";
+    name.append(el("span", "caret none", "▶"), el("span", "ico files"), el("span", "lbl", "[파일 " + fmtNum(own.count) + "개]"));
+    row.append(name, bar(p), el("span", "num", S.metric === "file_count" ? fmtNum(v) : fmtBytes(v)), el("span", "num", p.toFixed(1) + "%"));
+    row.addEventListener("click", () => selectPath(node.d.path));
+    node.kids.appendChild(row);
+  }
+  if (!dirs.length && !(own && own.count)) node.caret.classList.add("none");
+}
+
+async function setOpen(node, open) {
+  if (open) await loadChildren(node);
+  node.open = open;
+  node.kids.hidden = !open;
+  node.caret.classList.toggle("open", open);
+}
+function toggleNode(node) { return setOpen(node, !node.open); }
+
+async function revealInTree(path) {
+  const root = treeNodes.get("");
+  if (!root) return;
+  await setOpen(root, true);
+  const chain = chainOf(path);
+  for (let i = 0; i < chain.length - 1; i++) {
+    const n = treeNodes.get(chain[i]);
+    if (!n) break;
+    await setOpen(n, true);
+  }
+}
+
+function highlightTree() {
+  treeNodes.forEach(n => n.row.classList.toggle("sel", n.d.path === S.sel));
+  const n = treeNodes.get(S.sel);
+  if (n) {
+    const pane = $("treePane");
+    const r = n.row.getBoundingClientRect(), pr = pane.getBoundingClientRect();
+    if (r.top < pr.top + 24 || r.bottom > pr.bottom) n.row.scrollIntoView({ block: "center" });
+  }
+}
+
+async function buildTree() {
+  const data = await getJSON("/api/tree");
+  S.roots = data.dirs;
+  treeNodes.clear();
+  const box = $("treeBox");
+  box.replaceChildren();
+  $("treeMetricHead").textContent = METRIC_LABEL[S.metric];
+  if (!S.roots.length) {
+    box.appendChild(el("div", "empty", "데이터가 없습니다. 스캔을 실행하세요."));
+    return;
+  }
+  const root = makeTreeNode(virtualRoot(), 0, null);
+  box.appendChild(root.wrap);
+  await setOpen(root, true);
+}
+
+/* ---------- 선택 / 경로 표시줄 ---------- */
+async function selectPath(path) {
+  if (path && !rootOf(path)) path = "";
+  S.sel = path;
+  S.detail = null;
+  await revealInTree(path);
+  highlightTree();
+  renderCrumbs();
+  await loadTab();
+}
+
+function renderCrumbs() {
+  const box = $("crumbs");
+  box.replaceChildren();
+  const items = [""].concat(chainOf(S.sel));
+  items.forEach((p, i) => {
+    if (i > 0) box.appendChild(el("span", "crumb-sep", "›"));
+    const b = el("button", "crumb" + (p === S.sel ? " cur" : ""), p === "" ? "전체" : i === 1 ? p : baseName(p));
+    b.title = p || "전체 데이터 영역";
+    b.addEventListener("click", () => selectPath(p));
+    box.appendChild(b);
+  });
+  $("upBtn").disabled = !S.sel;
+}
+$("upBtn").addEventListener("click", () => { if (S.sel) selectPath(parentOf(S.sel)); });
+
+/* ---------- 선택 폴더 데이터 ---------- */
+async function getDetail() {
+  if (S.detail && S.detail.path === S.sel) return S.detail;
+  let d;
+  if (S.sel === "") {
+    d = { path: "", node: virtualRoot(), dirs: S.roots, files: [], own_files: { count: 0, size: 0 } };
+  } else {
+    const data = await getJSON("/api/tree?files_limit=500&path=" + encodeURIComponent(S.sel));
+    d = { path: S.sel, node: data.node, dirs: data.dirs, files: data.files, own_files: data.own_files };
+  }
+  S.detail = d;
+  return d;
+}
+
+/* ---------- 탭 ---------- */
+const TABS = {
+  details: renderDetails, chart: renderChart, ext: renderExt, age: renderAge,
+  top: renderTop, map: renderMap, search: renderSearch, changes: renderChanges,
+};
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
+  S.tab = b.dataset.tab;
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === b));
+  Object.keys(TABS).forEach(k => { $("tab-" + k).hidden = k !== S.tab; });
+  loadTab();
+}));
+async function loadTab() {
+  hideTip();
+  try { await TABS[S.tab](); } catch (e) { console.error(e); }
+}
+
+/* 상세: 하위 폴더 + 파일, 열 머리글 클릭 정렬 */
+const DET_COLS = [
+  { key: "name", label: "이름" },
+  { key: "size", label: "용량", num: true },
+  { key: "alloc_size", label: "할당", num: true },
+  { key: "pct", label: "상위 대비 %" },
+  { key: "file_count", label: "파일", num: true },
+  { key: "dir_count", label: "폴더", num: true },
+  { key: "mtime", label: "최근 수정" },
+  { key: "atime", label: "최근 접근" },
+  { key: "score", label: "점수", num: true },
+  { key: "grade", label: "등급" },
+  { key: "cleanup", label: "정리 후보", num: true },
+];
+function detItems(d) {
+  const items = d.dirs.map(x => ({
+    kind: "dir", path: x.path, name: S.sel === "" ? x.path : x.name, size: x.size, alloc_size: x.alloc_size,
+    file_count: x.file_count, dir_count: x.dir_count, mtime: x.last_mtime, atime: x.last_atime,
+    score: x.avg_score, grade: gradeOf(x.avg_score), cleanup: x.cleanup_size,
+  }));
+  d.files.forEach(f => items.push({
+    kind: "file", path: f.path, name: f.name, size: f.size, alloc_size: null, file_count: 1, dir_count: null,
+    mtime: f.mtime, atime: Math.max(f.atime, f.mtime), score: f.score, grade: f.grade, cleanup: null,
+  }));
+  return items;
+}
+function activeSortKey() { return S.sort.key === "metric" ? S.metric : S.sort.key; }
+function sortItems(items) {
+  let key = activeSortKey();
+  if (key === "pct") key = S.metric;
+  const dir = S.sort.dir;
+  const gOrder = { hot: 3, warm: 2, cold: 1, stale: 0 };
+  return items.sort((a, b) => {
+    if (key === "name") return dir * a.name.localeCompare(b.name, "ko");
+    let va = key === "grade" ? gOrder[a.grade] : a[key], vb = key === "grade" ? gOrder[b.grade] : b[key];
+    if (va == null) va = key === "alloc_size" ? a.size : -1;
+    if (vb == null) vb = key === "alloc_size" ? b.size : -1;
+    return dir * (va - vb) || (b.size - a.size);
+  });
+}
+function renderDetHead() {
+  const tr = $("detHead");
+  tr.replaceChildren();
+  const active = activeSortKey();
+  DET_COLS.forEach(c => {
+    const th = el("th", "sortable" + (c.num ? " num" : ""), c.label);
+    if (c.key === active) th.appendChild(el("span", "arrow", S.sort.dir < 0 ? "▼" : "▲"));
+    th.addEventListener("click", () => {
+      if (c.key === active) S.sort = { key: c.key, dir: -S.sort.dir };
+      else S.sort = { key: c.key, dir: c.key === "name" ? 1 : -1 };
+      renderDetails();
+    });
+    tr.appendChild(th);
+  });
+}
+async function renderDetails() {
+  const d = await getDetail();
+  renderDetHead();
+  const n = d.node;
+  const tbody = $("detRows");
+  tbody.replaceChildren();
+  $("folderInfo").textContent = n
+    ? (S.sel || "전체 데이터 영역") + " · 용량 " + fmtBytes(n.size) + " · 할당 " + fmtBytes(n.alloc_size) +
+      " · 파일 " + fmtNum(n.file_count) + "개 · 폴더 " + fmtNum(n.dir_count) + "개" +
+      (n.last_mtime ? " · 최근 수정 " + fmtDateTime(n.last_mtime) : "")
+    : "";
+  const items = sortItems(detItems(d));
+  $("detEmpty").hidden = items.length > 0;
+  const total = n ? n[S.metric] : 0;
+  items.forEach(it => {
+    const tr = el("tr", it.kind === "dir" ? "dirrow" : "");
+    const nameTd = el("td", "name");
+    const cell = el("span", "cell");
+    cell.append(el("span", "ico " + (it.kind === "dir" ? "folder" : "files")), document.createTextNode(it.name));
+    nameTd.appendChild(cell);
+    nameTd.title = it.path;
+    const v = S.metric === "alloc_size" && it.alloc_size == null ? it.size : it[S.metric];
+    tr.append(
+      nameTd,
+      td(fmtBytes(it.size), "num"),
+      td(it.alloc_size == null ? "–" : fmtBytes(it.alloc_size), "num"),
+      barCell(pct(v, total)),
+      td(it.kind === "dir" ? fmtNum(it.file_count) : "", "num"),
+      td(it.kind === "dir" ? fmtNum(it.dir_count) : "", "num"),
+      td(fmtDate(it.mtime), null, fmtDateTime(it.mtime)),
+      td(fmtDate(it.atime), null, fmtDateTime(it.atime)),
+      td(it.score.toFixed(1), "num"),
+      gradeCell(it.grade),
+      td(it.cleanup == null ? "" : fmtBytes(it.cleanup), "num")
+    );
+    if (it.kind === "dir") tr.addEventListener("dblclick", () => selectPath(it.path));
+    tbody.appendChild(tr);
+  });
+  const shown = d.files.length, own = d.own_files.count;
+  $("detMore").hidden = shown >= own;
+  $("detMore").textContent = "이 폴더 바로 아래 파일 " + fmtNum(own) + "개 중 큰 순 " + fmtNum(shown) + "개만 표시합니다. 나머지는 파일 검색 탭에서 찾으세요.";
+}
+
+/* 차트: 하위 항목 비중 도넛 */
+function arcPath(cx, cy, r, ri, a0, a1) {
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  const p = (rad, a) => [cx + rad * Math.sin(a), cy - rad * Math.cos(a)];
+  const [x0, y0] = p(r, a0), [x1, y1] = p(r, a1), [x2, y2] = p(ri, a1), [x3, y3] = p(ri, a0);
+  return "M" + x0 + " " + y0 + " A" + r + " " + r + " 0 " + large + " 1 " + x1 + " " + y1 +
+    " L" + x2 + " " + y2 + " A" + ri + " " + ri + " 0 " + large + " 0 " + x3 + " " + y3 + " Z";
+}
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  Object.keys(attrs).forEach(k => e.setAttribute(k, attrs[k]));
+  return e;
+}
+async function renderChart() {
+  const d = await getDetail();
+  const key = S.metric;
+  let items = d.dirs.map(x => ({ name: S.sel === "" ? x.path : x.name, path: x.path, v: x[key] || 0, dir: true }));
+  if (d.own_files.count > 0) {
+    items.push({ name: "[파일 " + fmtNum(d.own_files.count) + "개]", path: "", v: key === "file_count" ? d.own_files.count : d.own_files.size, dir: false });
+  }
+  items = items.filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  if (items.length > 10) {
+    const rest = items.slice(9);
+    items = items.slice(0, 9);
+    items.push({ name: "기타 " + rest.length + "개", path: "", v: rest.reduce((s, x) => s + x.v, 0), dir: false });
+  }
+  const total = items.reduce((s, x) => s + x.v, 0);
+  $("chartTitle").textContent = (S.sel || "전체 데이터 영역") + " · " + METRIC_LABEL[key] + " 기준 하위 항목 비중 · 조각을 누르면 그 폴더로 이동";
+  $("chartValHead").textContent = METRIC_LABEL[key];
+  const svg = $("pie");
+  svg.replaceChildren();
+  const tbody = $("chartRows");
+  tbody.replaceChildren();
+  if (!total) { emptyRow(tbody, 4, "표시할 항목이 없습니다."); return; }
+  let a = 0;
+  items.forEach((x, i) => {
+    const frac = x.v / total;
+    const color = PIE_COLORS[i % PIE_COLORS.length];
+    const shape = frac >= 0.9999
+      ? svgEl("circle", { cx: 130, cy: 130, r: 95, fill: "none", stroke: color, "stroke-width": 50 })
+      : svgEl("path", { d: arcPath(130, 130, 120, 70, a, a + frac * Math.PI * 2), fill: color, stroke: "var(--surface-1)", "stroke-width": 1.5 });
+    a += frac * Math.PI * 2;
+    shape.style.cursor = x.dir ? "pointer" : "default";
+    hoverTip(shape, () => fmtMetric(x.v) + " (" + (frac * 100).toFixed(1) + "%)", () => x.path || x.name);
+    if (x.dir) shape.addEventListener("click", () => selectPath(x.path));
+    svg.appendChild(shape);
+
+    const tr = el("tr", x.dir ? "dirrow" : "");
+    const sw = el("td"); const s = el("span", "swatch"); s.style.background = color; sw.appendChild(s);
+    tr.append(sw, td(x.name, "name", x.path), td(fmtMetric(x.v), "num"), td((frac * 100).toFixed(1) + "%", "num"));
+    if (x.dir) tr.addEventListener("click", () => selectPath(x.path));
+    tbody.appendChild(tr);
+  });
+  const t1 = svgEl("text", { x: 130, y: 128, "text-anchor": "middle", "font-size": 15, "font-weight": 600, fill: "var(--text-primary)" });
+  t1.textContent = fmtMetric(total);
+  const t2 = svgEl("text", { x: 130, y: 147, "text-anchor": "middle", "font-size": 11, fill: "var(--text-muted)" });
+  t2.textContent = METRIC_LABEL[key];
+  svg.append(t1, t2);
+}
+
+/* 확장자 */
+async function renderExt() {
+  const params = new URLSearchParams({ limit: "50" });
+  if (S.sel) params.set("path", S.sel);
+  const data = await getJSON("/api/extensions?" + params);
   const tbody = $("extRows");
   tbody.replaceChildren();
   $("extEmpty").hidden = data.extensions.length > 0;
-  const max = data.extensions.length ? data.extensions[0].size : 0;
   data.extensions.forEach(x => {
-    const tr = document.createElement("tr");
-    const tdExt = document.createElement("td"); tdExt.textContent = x.ext;
-    const tdN = document.createElement("td"); tdN.className = "num"; tdN.textContent = fmtNum(x.file_count);
-    const tdSize = document.createElement("td");
-    const bar = document.createElement("span"); bar.className = "xbar";
-    const fill = document.createElement("span"); fill.style.width = (max > 0 ? x.size / max * 100 : 0) + "%";
-    bar.appendChild(fill);
-    tdSize.append(bar, document.createTextNode(fmtBytes(x.size) +
-      (data.total_size > 0 ? " (" + (x.size / data.total_size * 100).toFixed(1) + "%)" : "")));
-    const tdClean = document.createElement("td"); tdClean.className = "num"; tdClean.textContent = fmtBytes(x.cleanup_size);
-    tr.append(tdExt, tdN, tdSize, tdClean);
+    const tr = el("tr");
+    tr.append(
+      td(x.ext), td(fmtNum(x.file_count), "num"), td(fmtBytes(x.size), "num"),
+      barCell(pct(x.size, data.total_size)), td(fmtBytes(x.cleanup_size), "num"),
+      td(x.avg_score == null ? "–" : x.avg_score.toFixed(1), "num")
+    );
     tbody.appendChild(tr);
   });
 }
 
-/* ---------- 직전 스캔 대비 변화 ---------- */
-function fmtDelta(n, isBytes) {
-  if (n === 0) return "0";
-  const v = isBytes ? fmtBytes(Math.abs(n)) : fmtNum(Math.abs(n));
-  return (n > 0 ? "+" : "−") + v;
-}
-function deltaCell(n, isBytes) {
-  const td = document.createElement("td");
-  td.className = "num" + (n > 0 ? " delta-up" : n < 0 ? " delta-down" : "");
-  td.textContent = fmtDelta(n, isBytes);
-  return td;
-}
-async function refreshChanges() {
-  const data = await getJSON("/api/changes?limit=10");
-  const tbody = $("chgRows");
-  tbody.replaceChildren();
-  $("chgEmpty").hidden = data.roots.length > 0;
-  $("chgSummary").textContent = data.roots.map(r =>
-    r.path + ": " + fmtDelta(r.size_delta, true) + " · 파일 " + fmtDelta(r.file_delta, false) + "개 · 정리 후보 " +
-    fmtDelta(r.cleanup_delta, true) + " (" + fmtDate(r.prev_finished_at) + " → " + fmtDate(r.cur_finished_at) + ")"
-  ).join("\n");
-  if (data.roots.length && !data.dirs.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td"); td.colSpan = 4; td.className = "empty"; td.textContent = "변화가 없습니다.";
-    tr.appendChild(td); tbody.appendChild(tr);
-  }
-  data.dirs.forEach(d => {
-    const tr = document.createElement("tr");
-    const tdPath = document.createElement("td");
-    tdPath.className = "path";
-    tdPath.textContent = d.path.split(/[\\/]/).pop() + (d.state === "new" ? " (새로 생김)" : d.state === "removed" ? " (삭제됨)" : "");
-    tdPath.title = d.path;
-    const tdSize = document.createElement("td"); tdSize.className = "num"; tdSize.textContent = fmtBytes(d.size);
-    tr.append(tdPath, tdSize, deltaCell(d.size_delta, true), deltaCell(d.file_delta, false));
-    tbody.appendChild(tr);
-  });
-}
-
-/* ---------- 디렉터리 트리 (TreeSize 스타일) ---------- */
-function makeCell(cls, text) {
-  const s = document.createElement("span");
-  if (cls) s.className = cls;
-  s.textContent = text;
-  return s;
-}
-function makeBar(pct) {
-  const bar = document.createElement("span");
-  bar.className = "tbar";
-  const fill = document.createElement("div");
-  fill.style.width = Math.max(pct, 0.5) + "%";
-  bar.appendChild(fill);
-  return bar;
-}
-function dirRow(d, depth, parentSize) {
-  const wrap = document.createElement("div");
-  const pct = parentSize > 0 ? (d.size / parentSize) * 100 : 0;
-  const row = document.createElement("div");
-  row.className = "trow dir";
-  const name = document.createElement("span");
-  name.className = "name";
-  name.style.paddingLeft = depth * 18 + "px";
-  const caret = makeCell("caret", "▶");
-  name.appendChild(caret);
-  name.appendChild(document.createTextNode(depth === 0 ? d.path : d.name));
-  name.title = d.path;
-  row.append(
-    name,
-    makeBar(pct),
-    makeCell("num", fmtBytes(d.size)),
-    makeCell("num", pct.toFixed(1) + "%"),
-    makeCell("num", fmtNum(d.file_count)),
-    makeCell("num", d.avg_score.toFixed(1))
-  );
-  const children = document.createElement("div");
-  children.hidden = true;
-  let loaded = false;
-  row.addEventListener("click", async () => {
-    if (!loaded) {
-      loaded = true;
-      const data = await getJSON("/api/tree?path=" + encodeURIComponent(d.path));
-      data.dirs.forEach(c => children.appendChild(dirRow(c, depth + 1, d.size)));
-      data.files.forEach(f => children.appendChild(fileRow(f, depth + 1, d.size)));
-      if (data.files.length >= 100) {
-        const more = document.createElement("div");
-        more.className = "tmore";
-        more.style.paddingLeft = (depth + 1) * 18 + 26 + "px";
-        more.textContent = "… 상위 100개 파일만 표시 (나머지는 파일 목록에서 검색)";
-        children.appendChild(more);
-      }
-      if (!data.dirs.length && !data.files.length) {
-        const none = document.createElement("div");
-        none.className = "tmore";
-        none.style.paddingLeft = (depth + 1) * 18 + 26 + "px";
-        none.textContent = "(비어 있음)";
-        children.appendChild(none);
-      }
-    }
-    children.hidden = !children.hidden;
-    row.classList.toggle("open", !children.hidden);
-  });
-  wrap.append(row, children);
-  return wrap;
-}
-function fileRow(f, depth, parentSize) {
-  const pct = parentSize > 0 ? (f.size / parentSize) * 100 : 0;
-  const row = document.createElement("div");
-  row.className = "trow file";
-  const name = document.createElement("span");
-  name.className = "name";
-  name.style.paddingLeft = depth * 18 + 20 + "px";
-  name.appendChild(document.createTextNode(f.name));
-  name.title = f.path;
-  const scoreCell = document.createElement("span");
-  scoreCell.className = "num chip";
-  const dot = document.createElement("span");
-  dot.className = "dot"; dot.style.background = GRADE_COLOR[f.grade];
-  scoreCell.append(dot, document.createTextNode(f.score.toFixed(1)));
-  row.append(
-    name,
-    makeBar(pct),
-    makeCell("num", fmtBytes(f.size)),
-    makeCell("num", pct.toFixed(1) + "%"),
-    makeCell("num", "–"),
-    scoreCell
-  );
-  return row;
-}
-async function loadTree() {
-  const data = await getJSON("/api/tree");
-  const box = $("treeBox");
+/* 파일 나이 */
+async function renderAge() {
+  const params = new URLSearchParams({ by: S.ageBy });
+  if (S.sel) params.set("path", S.sel);
+  const data = await getJSON("/api/age?" + params);
+  const box = $("ageBox");
   box.replaceChildren();
-  $("treeEmpty").hidden = data.dirs.length > 0;
-  const total = data.dirs.reduce((s, d) => s + d.size, 0);
-  data.dirs.forEach(d => box.appendChild(dirRow(d, 0, total)));
-  /* 파일 목록의 디렉터리 필터 옵션 갱신 (선택 유지) */
-  const sel = $("fRoot");
-  const current = sel.value;
-  sel.replaceChildren();
-  const all = document.createElement("option");
-  all.value = ""; all.textContent = "디렉터리: 전체";
-  sel.appendChild(all);
-  data.dirs.forEach(d => {
-    const opt = document.createElement("option");
-    opt.value = d.path; opt.textContent = d.path;
-    sel.appendChild(opt);
+  const total = data.buckets.reduce((s, b) => s + b.size, 0);
+  const totalN = data.buckets.reduce((s, b) => s + b.file_count, 0);
+  if (!totalN) { box.appendChild(el("div", "empty", "파일이 없습니다.")); return; }
+  const max = Math.max.apply(null, data.buckets.map(b => b.size)) || 1;
+  /* 오래될수록 연한 색 (등급 램프와 같은 방향) */
+  const ramp = ["#184f95", "#1f62b5", "#2a78d6", "#4189e0", "#5598e7", "#6ea8ec", "#86b6ef"];
+  data.buckets.forEach((b, i) => {
+    const row = el("div", "hbar-row");
+    const hb = el("div", "hbar");
+    const f = el("div");
+    f.style.width = (b.size / max * 100) + "%";
+    f.style.background = ramp[i];
+    hb.appendChild(f);
+    row.append(
+      el("span", null, b.label), hb,
+      el("span", "num", fmtBytes(b.size) + " · " + pct(b.size, total).toFixed(1) + "% · " + fmtNum(b.file_count) + "개")
+    );
+    box.appendChild(row);
   });
-  sel.value = [...sel.options].some(o => o.value === current) ? current : "";
+}
+$("ageM").addEventListener("click", () => { S.ageBy = "mtime"; $("ageM").classList.add("active"); $("ageA").classList.remove("active"); renderAge(); });
+$("ageA").addEventListener("click", () => { S.ageBy = "atime"; $("ageA").classList.add("active"); $("ageM").classList.remove("active"); renderAge(); });
+
+/* 상위 파일 */
+async function renderTop() {
+  const params = new URLSearchParams({ sort: "size", order: "desc", limit: "100" });
+  if (S.sel) params.set("root", S.sel);
+  const data = await getJSON("/api/files?" + params);
+  const tbody = $("topRows");
+  tbody.replaceChildren();
+  $("topEmpty").hidden = data.files.length > 0;
+  data.files.forEach(f => {
+    const tr = el("tr", "dirrow");
+    const loc = dirOfFile(f.path);
+    const at = Math.max(f.atime, f.mtime);
+    tr.append(
+      td(f.name, "name", f.path), td(relPath(loc), "path", loc), td(fmtBytes(f.size), "num"),
+      td(fmtDate(f.mtime), null, fmtDateTime(f.mtime)), td(fmtDate(at), null, fmtDateTime(at)),
+      td(f.score.toFixed(1), "num"), gradeCell(f.grade)
+    );
+    tr.addEventListener("dblclick", () => selectPath(loc));
+    tbody.appendChild(tr);
+  });
 }
 
-/* ---------- 격자(트리맵) 뷰 ---------- */
-let tmStack = []; /* 드릴다운 경로 스택. 비어 있으면 루트 레벨 */
-
-function scoreColor(s) {
-  return s >= 70 ? GRADE_COLOR.hot : s >= 40 ? GRADE_COLOR.warm : s >= 10 ? GRADE_COLOR.cold : GRADE_COLOR.stale;
-}
-
-/* squarified treemap: 값 목록을 (x,y,w,h) 사각형으로 배치 */
+/* 트리맵: squarified 배치 */
 function treemapLayout(values, x, y, w, h) {
   const total = values.reduce((s, d) => s + d.v, 0);
   if (total <= 0 || w <= 0 || h <= 0) return [];
@@ -536,205 +927,178 @@ function treemapLayout(values, x, y, w, h) {
   while (i < items.length) {
     const len = Math.min(cw, ch);
     if (len <= 0) break;
-    const next = [...row, items[i]];
+    const next = row.concat([items[i]]);
     if (row.length === 0 || worst(next, len) <= worst(row, len)) { row = next; i++; }
     else { layoutRow(); row = []; }
   }
   if (row.length) layoutRow();
   return rects;
 }
-
-async function loadTreemap() {
-  const cur = tmStack[tmStack.length - 1];
-  const data = await getJSON(cur ? "/api/tree?path=" + encodeURIComponent(cur) : "/api/tree");
-  const nodes = [
-    ...data.dirs.map(d => ({ kind: "dir", name: cur ? d.name : d.path, path: d.path, size: d.size, count: d.file_count, score: d.avg_score })),
-    ...data.files.map(f => ({ kind: "file", name: f.name, path: f.path, size: f.size, score: f.score })),
-  ];
-  $("tmUp").hidden = tmStack.length === 0;
-  $("tmPath").textContent = cur || "전체 데이터 영역";
-  renderTreemap(nodes);
+function renderMapLegend() {
+  const box = $("mapLegend");
+  if (box.childNodes.length) return;
+  box.appendChild(el("span", null, "면적 = 용량 · 색 = 가치 등급 · 폴더를 누르면 하위로 이동"));
+  ["hot", "warm", "cold", "stale"].forEach(g => box.appendChild(gradeChip(g)));
 }
-
-function renderTreemap(nodes) {
+async function renderMap() {
+  renderMapLegend();
+  const d = await getDetail();
+  const nodes = d.dirs.map(x => ({ kind: "dir", name: S.sel === "" ? x.path : x.name, path: x.path, size: x.size, count: x.file_count, score: x.avg_score }))
+    .concat(d.files.map(f => ({ kind: "file", name: f.name, path: f.path, size: f.size, score: f.score })));
   const box = $("tmBox");
   box.replaceChildren();
-  const H = 360;
+  const H = Math.max(360, $("tabBody").clientHeight - 70);
   box.style.height = H + "px";
   const W = box.clientWidth || 800;
-  if (!nodes.length) {
-    box.style.height = "auto";
-    const none = document.createElement("div");
-    none.className = "tmore";
-    none.textContent = "(비어 있음)";
-    box.appendChild(none);
-    return;
-  }
+  if (!nodes.length) { box.style.height = "auto"; box.appendChild(el("div", "empty", "(비어 있음)")); return; }
   const vals = nodes.map(n => ({ v: Math.max(n.size, 1), item: n })).sort((a, b) => b.v - a.v);
   treemapLayout(vals, 0, 0, W, H).forEach(r => {
     const n = r.item;
-    const cell = document.createElement("div");
-    const ink = n.score >= 40 ? "inklight" : "inkdark"; /* hot/warm 어두운 파랑 → 흰 글자 */
-    cell.className = "tm-cell " + n.kind + " " + ink;
+    const g = gradeOf(n.score);
+    const cell = el("div", "tm-cell " + n.kind + " " + (g === "hot" || g === "warm" ? "inklight" : "inkdark"));
     cell.style.left = (r.x + 1) + "px";
     cell.style.top = (r.y + 1) + "px";
     cell.style.width = Math.max(r.w - 2, 1) + "px";
     cell.style.height = Math.max(r.h - 2, 1) + "px";
-    cell.style.background = scoreColor(n.score);
+    cell.style.background = GRADE_COLOR[g];
     if (n.kind === "file") cell.style.opacity = "0.75";
     if (r.w > 56 && r.h > 20) {
-      const nm = document.createElement("span");
-      nm.className = "nm"; nm.textContent = n.name;
-      cell.appendChild(nm);
-      if (r.h > 38) {
-        const sz = document.createElement("span");
-        sz.className = "sz"; sz.textContent = fmtBytes(n.size);
-        cell.appendChild(sz);
-      }
+      cell.appendChild(el("span", "nm", n.name));
+      if (r.h > 38) cell.appendChild(el("span", null, fmtBytes(n.size)));
     }
-    const label = n.kind === "dir"
-      ? n.path + " · " + fmtNum(n.count) + "개 · 평균 점수 " + n.score.toFixed(1)
-      : n.path + " · 점수 " + n.score.toFixed(1);
-    cell.addEventListener("pointerenter", e => showTip(e, fmtBytes(n.size), label));
-    cell.addEventListener("pointermove", moveTip);
-    cell.addEventListener("pointerleave", hideTip);
-    if (n.kind === "dir") {
-      cell.addEventListener("click", () => { hideTip(); tmStack.push(n.path); loadTreemap(); });
-    }
+    hoverTip(cell, () => fmtBytes(n.size), () => n.kind === "dir"
+      ? n.path + " · 파일 " + fmtNum(n.count) + "개 · 평균 점수 " + n.score.toFixed(1)
+      : n.path + " · 점수 " + n.score.toFixed(1));
+    if (n.kind === "dir") cell.addEventListener("click", () => selectPath(n.path));
     box.appendChild(cell);
   });
 }
 
-$("tmUp").addEventListener("click", () => { tmStack.pop(); loadTreemap(); });
-$("viewList").addEventListener("click", () => {
-  $("viewList").classList.add("active"); $("viewGrid").classList.remove("active");
-  $("treeListView").hidden = false; $("treeGridView").hidden = true;
-  $("treeDesc").textContent = "폴더를 클릭하면 펼쳐집니다 — 용량 순 정렬, 비중(%)은 상위 폴더 대비";
-});
-$("viewGrid").addEventListener("click", () => {
-  $("viewGrid").classList.add("active"); $("viewList").classList.remove("active");
-  $("treeListView").hidden = true; $("treeGridView").hidden = false;
-  $("treeDesc").textContent = "면적 = 용량, 색 = 가치점수 등급 — 폴더를 클릭하면 하위로 이동";
-  loadTreemap();
-});
-
-/* ---------- 파일 테이블 ---------- */
-function renderFiles(files) {
-  const tbody = $("fileRows");
-  tbody.replaceChildren();
-  $("fileEmpty").hidden = files.length > 0;
-  files.forEach(f => {
-    const tr = document.createElement("tr");
-    const tdPath = document.createElement("td");
-    tdPath.className = "path"; tdPath.textContent = f.path; tdPath.title = f.path;
-    const tdSize = document.createElement("td");
-    tdSize.className = "num"; tdSize.textContent = fmtBytes(f.size);
-    const tdA = document.createElement("td"); tdA.textContent = fmtDate(f.atime);
-    const tdM = document.createElement("td"); tdM.textContent = fmtDate(f.mtime);
-    const tdScore = document.createElement("td");
-    tdScore.className = "num"; tdScore.textContent = f.score.toFixed(1);
-    const tdGrade = document.createElement("td");
-    const chip = document.createElement("span"); chip.className = "chip";
-    const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = GRADE_COLOR[f.grade];
-    chip.appendChild(dot);
-    chip.appendChild(document.createTextNode(GRADE_LABEL[f.grade]));
-    tdGrade.appendChild(chip);
-    tr.append(tdPath, tdSize, tdA, tdM, tdScore, tdGrade);
-    tbody.appendChild(tr);
-  });
-}
-
-/* ---------- 데이터 로드 ---------- */
-async function getJSON(url) { const r = await fetch(url); return r.json(); }
-
-async function refreshAll() {
-  const summary = await getJSON("/api/summary");
-  $("tFiles").textContent = fmtNum(summary.file_count);
-  $("tSize").textContent = fmtBytes(summary.total_size);
-  $("tScore").textContent = summary.avg_score.toFixed(1);
-  $("tCleanup").textContent = fmtBytes(summary.cleanup.size);
-  $("tCleanupNote").textContent = summary.cleanup.grades.map(g => GRADE_LABEL[g]).join(" + ") +
-    (summary.cleanup.min_size_mb > 0 ? " · " + summary.cleanup.min_size_mb + "MB 이상" : "");
-  await Promise.all([refreshExtensions(), refreshChanges()]);
-  await loadTree();
-  if (!$("treeGridView").hidden) { tmStack = []; await loadTreemap(); }
-  await refreshRank();
-  await refreshFiles();
-}
-
-/* ---------- 디렉터리 순위 ---------- */
-async function refreshRank() {
-  const params = new URLSearchParams({ depth: $("rDepth").value, sort: $("rSort").value, limit: "20" });
-  const data = await getJSON("/api/top-dirs?" + params);
-  const tbody = $("rankRows");
-  tbody.replaceChildren();
-  $("rankEmpty").hidden = data.dirs.length > 0;
-  data.dirs.forEach(d => {
-    const tr = document.createElement("tr");
-    const tdPath = document.createElement("td");
-    tdPath.className = "path"; tdPath.textContent = d.path; tdPath.title = d.path;
-    const tdSize = document.createElement("td");
-    tdSize.className = "num"; tdSize.textContent = fmtBytes(d.size);
-    const tdClean = document.createElement("td");
-    tdClean.className = "num"; tdClean.textContent = fmtBytes(d.cleanup_size);
-    const tdPct = document.createElement("td");
-    tdPct.className = "num"; tdPct.textContent = d.size > 0 ? (d.cleanup_size / d.size * 100).toFixed(1) + "%" : "–";
-    tdPct.title = "용량 중 정리 후보 비중";
-    const tdCount = document.createElement("td");
-    tdCount.className = "num"; tdCount.textContent = fmtNum(d.file_count);
-    const tdScore = document.createElement("td");
-    tdScore.className = "num"; tdScore.textContent = d.avg_score.toFixed(1);
-    tr.append(tdPath, tdSize, tdClean, tdPct, tdCount, tdScore);
-    tbody.appendChild(tr);
-  });
-}
-$("rDepth").addEventListener("change", refreshRank);
-$("rSort").addEventListener("change", refreshRank);
-
-async function refreshFiles() {
+/* 파일 검색 */
+async function renderSearch() {
   const [sort, order] = $("fSort").value.split(":");
-  const params = new URLSearchParams({ sort, order, limit: "50" });
-  if ($("fRoot").value) params.set("root", $("fRoot").value);
+  const params = new URLSearchParams({ sort, order, limit: "200" });
+  if (S.sel) params.set("root", S.sel);
   if ($("fGrade").value) params.set("grade", $("fGrade").value);
   const q = $("fSearch").value.trim();
   if (q) params.set("q", q);
+  $("fScope").textContent = "범위: " + (S.sel || "전체") + " · 최대 200개";
   const data = await getJSON("/api/files?" + params);
-  renderFiles(data.files);
+  const tbody = $("fileRows");
+  tbody.replaceChildren();
+  $("fileEmpty").hidden = data.files.length > 0;
+  data.files.forEach(f => {
+    const tr = el("tr", "dirrow");
+    const at = Math.max(f.atime, f.mtime);
+    tr.append(
+      td(relPath(f.path), "path", f.path), td(fmtBytes(f.size), "num"),
+      td(fmtDate(at), null, fmtDateTime(at)), td(fmtDate(f.mtime), null, fmtDateTime(f.mtime)),
+      td(f.score.toFixed(1), "num"), gradeCell(f.grade)
+    );
+    tr.addEventListener("dblclick", () => selectPath(dirOfFile(f.path)));
+    tbody.appendChild(tr);
+  });
+}
+$("fGrade").addEventListener("change", renderSearch);
+$("fSort").addEventListener("change", renderSearch);
+let searchTimer = null;
+$("fSearch").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderSearch, 300); });
+
+/* 변화 */
+function fmtDelta(n, isBytes) {
+  if (!n) return "0";
+  return (n > 0 ? "+" : "−") + (isBytes ? fmtBytes(Math.abs(n)) : fmtNum(Math.abs(n)));
+}
+function deltaTd(n, isBytes) {
+  return td(fmtDelta(n, isBytes), "num" + (n > 0 ? " delta-up" : n < 0 ? " delta-down" : ""));
+}
+async function renderChanges() {
+  const data = await getJSON("/api/changes?limit=30");
+  const tbody = $("chgRows");
+  tbody.replaceChildren();
+  $("chgEmpty").hidden = data.roots.length > 0;
+  $("chgSummary").textContent = data.roots.map(r =>
+    r.path + ": " + fmtDelta(r.size_delta, true) + " · 파일 " + fmtDelta(r.file_delta, false) + "개 · 정리 후보 " +
+    fmtDelta(r.cleanup_delta, true) + " (" + fmtDate(r.prev_finished_at) + " → " + fmtDate(r.cur_finished_at) + ")"
+  ).join("\n");
+  if (data.roots.length && !data.dirs.length) emptyRow(tbody, 5, "변화가 없습니다.");
+  data.dirs.forEach(d => {
+    const tr = el("tr", d.state === "removed" ? "" : "dirrow");
+    tr.append(
+      td(d.path + (d.state === "new" ? " (새로 생김)" : d.state === "removed" ? " (삭제됨)" : ""), "path", d.path),
+      td(fmtBytes(d.size), "num"), deltaTd(d.size_delta, true), deltaTd(d.file_delta, false), deltaTd(d.cleanup_delta, true)
+    );
+    if (d.state !== "removed") tr.addEventListener("dblclick", () => selectPath(d.path));
+    tbody.appendChild(tr);
+  });
+}
+
+/* ---------- 기준 / 단위 ---------- */
+$("metricSel").addEventListener("change", async () => {
+  S.metric = $("metricSel").value;
+  if (["size", "alloc_size", "file_count", "pct"].indexOf(S.sort.key) >= 0) S.sort = { key: "metric", dir: -1 };
+  await rebuild();
+});
+$("unitSel").addEventListener("change", async () => {
+  S.unit = $("unitSel").value;
+  await refreshKpis();
+  await rebuild();
+});
+
+/* ---------- 전체 갱신 ---------- */
+async function refreshKpis() {
+  const s = await getJSON("/api/summary");
+  if (s.thresholds) S.thresholds = s.thresholds;
+  $("tFiles").textContent = fmtNum(s.file_count);
+  $("tSize").textContent = fmtBytes(s.total_size);
+  $("tScore").textContent = s.avg_score.toFixed(1);
+  $("tCleanup").textContent = fmtBytes(s.cleanup.size);
+  $("tCleanupNote").textContent = s.cleanup.grades.map(g => GRADE_LABEL[g]).join(" + ") +
+    (s.cleanup.min_size_mb > 0 ? " · " + s.cleanup.min_size_mb + "MB 이상" : "");
+}
+async function rebuild() {
+  const keep = S.sel;
+  await buildTree();
+  $("tDirs").textContent = S.roots.length ? fmtNum(virtualRoot().dir_count) : "–";
+  /* 루트가 하나면 처음부터 그 루트를 선택 */
+  await selectPath(keep || (S.roots.length === 1 ? S.roots[0].path : ""));
+}
+async function refreshAll() {
+  await refreshKpis();
+  await rebuild();
 }
 
 /* ---------- 스캔 제어 ---------- */
 let polling = null;
 async function pollStatus() {
   const st = await getJSON("/api/scan/status");
-  const el = $("scanStatus");
-  $("hostInfo").textContent = st.hostname ? "서버: " + st.hostname + (st.ip ? " (" + st.ip + ")" : "") : "";
+  const s = $("scanStatus");
+  $("hostInfo").textContent = st.hostname ? st.hostname + (st.ip ? " (" + st.ip + ")" : "") : "";
   if (st.status === "running" || st.status === "cancelling") {
-    el.textContent = (st.status === "cancelling" ? "스캔 취소 중… " : "스캔 중… ") +
+    s.textContent = (st.status === "cancelling" ? "스캔 취소 중… " : "스캔 중… ") +
       fmtNum(st.file_count) + "개 파일 · " + fmtBytes(st.total_size) + " (" + st.root + ")";
     $("scanBtn").disabled = true;
     $("cancelBtn").hidden = false;
     $("cancelBtn").disabled = st.status === "cancelling";
+    if (!polling) polling = setInterval(pollStatus, 2000);
   } else {
     $("scanBtn").disabled = false;
     $("cancelBtn").hidden = true;
     if (polling) { clearInterval(polling); polling = null; await refreshAll(); }
     if (st.status === "done") {
-      el.textContent = "마지막 스캔 완료: " + st.root + " · " + fmtNum(st.file_count) + "개 · " + fmtBytes(st.total_size);
+      s.textContent = "마지막 스캔 " + (st.finished_at ? fmtDateTime(st.finished_at) + " · " : "") + st.root;
     } else if (st.status === "cancelled") {
-      el.textContent = "스캔 취소됨: " + st.root + " · " + fmtNum(st.file_count) + "개까지 반영 (삭제 파일 정리는 다음 완료 스캔에서)";
+      s.textContent = "스캔 취소됨: " + st.root + " · " + fmtNum(st.file_count) + "개까지 반영";
     } else if (st.status === "error") {
-      el.textContent = "스캔 오류: " + (st.error || "알 수 없음");
+      s.textContent = "스캔 오류: " + (st.error || "알 수 없음");
     } else {
-      el.textContent = "아직 스캔 이력이 없습니다.";
+      s.textContent = "아직 스캔 이력이 없습니다.";
     }
   }
 }
-
 $("scanBtn").addEventListener("click", async () => {
   const r = await fetch("/api/scan", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ root: null }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root: null }),
   });
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
@@ -742,10 +1106,9 @@ $("scanBtn").addEventListener("click", async () => {
     return;
   }
   $("scanBtn").disabled = true;
-  polling = setInterval(pollStatus, 2000);
+  if (!polling) polling = setInterval(pollStatus, 2000);
   pollStatus();
 });
-
 $("cancelBtn").addEventListener("click", async () => {
   $("cancelBtn").disabled = true;
   const r = await fetch("/api/scan/cancel", { method: "POST" });
@@ -756,20 +1119,16 @@ $("cancelBtn").addEventListener("click", async () => {
   pollStatus();
 });
 
-$("fRoot").addEventListener("change", refreshFiles);
-$("fGrade").addEventListener("change", refreshFiles);
-$("fSort").addEventListener("change", refreshFiles);
-let searchTimer = null;
-$("fSearch").addEventListener("input", () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(refreshFiles, 300);
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  if (S.tab !== "map") return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderMap, 200);
 });
 
 /* ---------- 초기화 ---------- */
 (async () => {
   await pollStatus();
-  const st = await getJSON("/api/scan/status");
-  if (st.status === "running" || st.status === "cancelling") { $("scanBtn").disabled = true; polling = setInterval(pollStatus, 2000); }
   await refreshAll();
 })();
 </script>

@@ -82,6 +82,11 @@ def init_db(db_path: Path) -> None:
         dcols = [r["name"] for r in conn.execute("PRAGMA table_info(dirs)")]
         if "cleanup_size" not in dcols:
             conn.execute("ALTER TABLE dirs ADD COLUMN cleanup_size INTEGER NOT NULL DEFAULT 0")
+        # TreeSize식 상세 열: 하위 폴더 수, 최근 수정/접근, 할당 용량
+        for col, decl in (("dir_count", "INTEGER NOT NULL DEFAULT 0"), ("last_mtime", "REAL"),
+                          ("last_atime", "REAL"), ("alloc_size", "INTEGER NOT NULL DEFAULT 0")):
+            if col not in dcols:
+                conn.execute("ALTER TABLE dirs ADD COLUMN {} {}".format(col, decl))
         conn.execute("CREATE INDEX IF NOT EXISTS idx_dirs_depth ON dirs(depth, size)")
         # 서버 재시작으로 끊긴 스캔은 실패로 정리
         conn.execute(

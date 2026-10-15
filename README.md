@@ -54,6 +54,33 @@ pip, venv, 인터넷 연결 모두 불필요. 브라우저에서 `http://<서버
 - `restart.sh`/`stop.sh`는 작업 폴더가 이 폴더인 `python3 server.py` 프로세스만 멈춥니다.
   같은 서버의 다른 프로그램(다른 폴더의 `server.py` 등)은 대상이 아닙니다.
 
+## 에이전트 설치 (대상 서버, 권장)
+
+설치 파일 하나로 설치·업그레이드·제거합니다. git, 인터넷, pip가 필요 없습니다.
+
+```bash
+# 개발 PC/테스트 서버에서 설치 파일 생성 → dist/fs-agent-install-<버전>.sh
+./build-installer.sh
+
+# 대상 서버(root)에서
+sudo bash fs-agent-install-<버전>.sh                 # 설치 또는 업그레이드 (기본 /opt/fs-agent, 포트 15891)
+sudo bash fs-agent-install-<버전>.sh --port 15892    # 다른 포트로
+sudo bash fs-agent-install-<버전>.sh --status        # 버전·서비스 상태·접속 주소
+sudo bash fs-agent-install-<버전>.sh --uninstall     # 제거 (스캔 결과 data/와 config.json은 남김)
+sudo bash fs-agent-install-<버전>.sh --uninstall --purge   # 전부 삭제
+```
+
+설치 파일이 하는 일:
+- python3 3.6 이상 확인 (없으면 RHEL 8의 `/usr/libexec/platform-python` 사용)
+- 포트가 다른 프로세스에 사용 중이면 아무것도 건드리지 않고 중단
+- `/opt/fs-agent`에 프로그램 설치. 업그레이드 때 `data/`(스캔 결과)와 `config.json`(설정)은 유지하고, 새 기본 설정은 `config.json.new`로 둠
+- systemd 서비스 `fs-agent` 등록·부팅 시 자동 시작 (낮은 CPU/IO 우선순위, 실패 시 30초 후 재시도)
+- firewalld가 켜져 있으면 포트 개방 (`--no-firewall`로 생략)
+- 스캔 대상이 `noatime` 마운트면 경고 (점수는 수정 시간 기준으로 보정)
+- 기동 확인 후 접속 주소(IP·호스트명) 출력
+
+설치 후 관리: `systemctl status|restart|stop fs-agent`, 로그는 `journalctl -u fs-agent`.
+
 ## 폐쇄망 배포
 
 인터넷이 되는 곳에서 소스 아카이브를 만들어 반입:

@@ -558,7 +558,7 @@ def _check_pid_file():
     except (OSError, ValueError):
         return
     if pid != os.getpid() and _pid_alive(pid):
-        _fail("이 폴더의 fs-agent가 이미 실행 중입니다 (PID %d). 재기동은 restart.sh를 사용하세요." % pid)
+        _fail("이 폴더의 fs-agent가 이미 실행 중입니다 (PID %d). 재기동은 restart.sh (설치판은 systemctl restart fs-agent)를 사용하세요." % pid)
 
 
 def _port_in_use(host, port):

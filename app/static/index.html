@@ -88,14 +88,12 @@
   .card .desc { color: var(--text-muted); font-size: 12px; margin: 0 0 12px; }
   .card.full { grid-column: 1 / -1; }
 
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
-  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
-  .legend .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-
-  .stackbar { display: flex; height: 28px; border-radius: 6px; overflow: hidden; background: var(--grid); }
-  .stackbar .seg { height: 100%; border-right: 2px solid var(--surface-1); cursor: default; }
-  .stackbar .seg:last-child { border-right: none; }
-  .stackbar .seg:hover { filter: brightness(1.12); }
+  .xbar { display: inline-block; width: 90px; height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; vertical-align: middle; margin-right: 8px; }
+  .xbar > span { display: block; height: 100%; background: var(--accent); }
+  .delta-up { color: #c2410c; }
+  .delta-down { color: #15803d; }
+  @media (prefers-color-scheme: dark) { .delta-up { color: #fb923c; } .delta-down { color: #4ade80; } }
+  .chgsum { white-space: pre-line; font-size: 13px; color: var(--text-secondary); margin: 0 0 10px; }
 
   .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .filters select, .filters input {
@@ -184,15 +182,23 @@
 
   <div class="cards">
     <div class="card">
-      <h2>가치점수 분포</h2>
-      <p class="desc">점수 구간별 파일 수</p>
-      <div id="histChart"></div>
+      <h2>확장자별 용량</h2>
+      <p class="desc">어떤 종류의 파일이 용량을 차지하는지 — 정리 후보 용량 함께 표시</p>
+      <table>
+        <thead><tr><th>확장자</th><th class="num">파일 수</th><th>용량</th><th class="num">정리 후보</th></tr></thead>
+        <tbody id="extRows"></tbody>
+      </table>
+      <div class="empty" id="extEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
     </div>
     <div class="card">
-      <h2>등급 구성 (용량 기준)</h2>
-      <p class="desc">전체 용량 중 각 등급이 차지하는 비중</p>
-      <div class="stackbar" id="gradeBar"></div>
-      <div class="legend" id="gradeLegend"></div>
+      <h2>직전 스캔 대비 변화</h2>
+      <p class="desc">최근 두 번의 완료 스캔 비교 — 1단계 하위 디렉터리 중 변화가 큰 순</p>
+      <div id="chgSummary" class="chgsum"></div>
+      <table>
+        <thead><tr><th>디렉터리</th><th class="num">현재 용량</th><th class="num">용량 변화</th><th class="num">파일 수 변화</th></tr></thead>
+        <tbody id="chgRows"></tbody>
+      </table>
+      <div class="empty" id="chgEmpty" hidden>비교할 이전 스캔이 없습니다. 스캔을 한 번 더 실행하면 변화가 표시됩니다.</div>
     </div>
     <div class="card full">
       <div class="headrow">
@@ -282,8 +288,6 @@
 const $ = id => document.getElementById(id);
 const GRADE_COLOR = { stale: "#86b6ef", cold: "#5598e7", warm: "#2a78d6", hot: "#184f95" };
 const GRADE_LABEL = { hot: "자주 사용", warm: "가끔 사용", cold: "거의 안 씀", stale: "장기 미사용" };
-/* 시퀀셜 blue 램프: 점수 낮음(밝음) → 높음(어두움) */
-const SEQ = ["#b7d3f6","#9ec5f4","#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#104281"];
 
 function fmtBytes(n) {
   if (n === 0) return "0 B";
@@ -318,105 +322,64 @@ function moveTip(evt) {
 }
 function hideTip() { tip.style.display = "none"; }
 
-/* ---------- 히스토그램 (SVG 컬럼) ---------- */
-function renderHist(buckets) {
-  const W = 480, H = 200, padL = 44, padB = 24, padT = 14;
-  const maxN = Math.max(...buckets.map(b => b.count), 1);
-  const plotW = W - padL - 10, plotH = H - padT - padB;
-  const band = plotW / buckets.length;
-  const barW = Math.min(24, band - 8);
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("width", "100%");
-
-  /* y 그리드/눈금 */
-  const step = Math.max(1, Math.ceil(maxN / 4));
-  for (let v = 0; v <= maxN; v += step) {
-    const y = padT + plotH - (v / maxN) * plotH;
-    const line = document.createElementNS(svgNS, "line");
-    line.setAttribute("x1", padL); line.setAttribute("x2", W - 10);
-    line.setAttribute("y1", y); line.setAttribute("y2", y);
-    line.setAttribute("stroke", "var(--grid)"); line.setAttribute("stroke-width", "1");
-    svg.appendChild(line);
-    const t = document.createElementNS(svgNS, "text");
-    t.setAttribute("x", padL - 6); t.setAttribute("y", y + 4);
-    t.setAttribute("text-anchor", "end"); t.setAttribute("font-size", "10");
-    t.setAttribute("fill", "var(--text-muted)");
-    t.textContent = fmtNum(v);
-    svg.appendChild(t);
-  }
-
-  const maxIdx = buckets.reduce((m, b, i) => b.count > buckets[m].count ? i : m, 0);
-  buckets.forEach((b, i) => {
-    const h = (b.count / maxN) * plotH;
-    const x = padL + i * band + (band - barW) / 2;
-    const y = padT + plotH - h;
-    const rect = document.createElementNS(svgNS, "path");
-    const r = Math.min(4, h);
-    rect.setAttribute("d",
-      `M${x},${padT + plotH} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + barW - r},${y} Q${x + barW},${y} ${x + barW},${y + r} L${x + barW},${padT + plotH} Z`);
-    rect.setAttribute("fill", SEQ[i]);
-    rect.style.cursor = "default";
-    const label = `점수 ${b.range} · 파일 ${fmtNum(b.count)}개 · ${fmtBytes(b.size)}`;
-    rect.addEventListener("pointerenter", e => { rect.setAttribute("opacity", "0.8"); showTip(e, fmtNum(b.count) + "개", "점수 " + b.range + " · " + fmtBytes(b.size)); });
-    rect.addEventListener("pointermove", moveTip);
-    rect.addEventListener("pointerleave", () => { rect.removeAttribute("opacity"); hideTip(); });
-    svg.appendChild(rect);
-    /* 최대 구간만 직접 라벨 */
-    if (i === maxIdx && b.count > 0) {
-      const t = document.createElementNS(svgNS, "text");
-      t.setAttribute("x", x + barW / 2); t.setAttribute("y", y - 4);
-      t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", "10");
-      t.setAttribute("fill", "var(--text-secondary)");
-      t.textContent = fmtNum(b.count);
-      svg.appendChild(t);
-    }
-    /* x 라벨: 짝수 구간만 */
-    if (i % 2 === 0) {
-      const t = document.createElementNS(svgNS, "text");
-      t.setAttribute("x", padL + i * band + band / 2); t.setAttribute("y", H - 8);
-      t.setAttribute("text-anchor", "middle"); t.setAttribute("font-size", "10");
-      t.setAttribute("fill", "var(--text-muted)");
-      t.textContent = b.range.split("-")[0];
-      svg.appendChild(t);
-    }
+/* ---------- 확장자별 용량 ---------- */
+async function refreshExtensions() {
+  const data = await getJSON("/api/extensions?limit=10");
+  const tbody = $("extRows");
+  tbody.replaceChildren();
+  $("extEmpty").hidden = data.extensions.length > 0;
+  const max = data.extensions.length ? data.extensions[0].size : 0;
+  data.extensions.forEach(x => {
+    const tr = document.createElement("tr");
+    const tdExt = document.createElement("td"); tdExt.textContent = x.ext;
+    const tdN = document.createElement("td"); tdN.className = "num"; tdN.textContent = fmtNum(x.file_count);
+    const tdSize = document.createElement("td");
+    const bar = document.createElement("span"); bar.className = "xbar";
+    const fill = document.createElement("span"); fill.style.width = (max > 0 ? x.size / max * 100 : 0) + "%";
+    bar.appendChild(fill);
+    tdSize.append(bar, document.createTextNode(fmtBytes(x.size) +
+      (data.total_size > 0 ? " (" + (x.size / data.total_size * 100).toFixed(1) + "%)" : "")));
+    const tdClean = document.createElement("td"); tdClean.className = "num"; tdClean.textContent = fmtBytes(x.cleanup_size);
+    tr.append(tdExt, tdN, tdSize, tdClean);
+    tbody.appendChild(tr);
   });
-  /* 기준선 */
-  const base = document.createElementNS(svgNS, "line");
-  base.setAttribute("x1", padL); base.setAttribute("x2", W - 10);
-  base.setAttribute("y1", padT + plotH); base.setAttribute("y2", padT + plotH);
-  base.setAttribute("stroke", "var(--baseline)");
-  svg.appendChild(base);
-
-  $("histChart").replaceChildren(svg);
 }
 
-/* ---------- 등급 스택바 ---------- */
-function renderGrades(grades, totalSize) {
-  const bar = $("gradeBar"), legend = $("gradeLegend");
-  bar.replaceChildren(); legend.replaceChildren();
-  const order = ["hot", "warm", "cold", "stale"];
-  order.forEach(g => {
-    const info = grades[g];
-    const pct = totalSize > 0 ? (info.size / totalSize) * 100 : 0;
-    if (pct > 0) {
-      const seg = document.createElement("div");
-      seg.className = "seg";
-      seg.style.width = pct + "%";
-      seg.style.background = GRADE_COLOR[g];
-      seg.addEventListener("pointerenter", e => showTip(e, fmtBytes(info.size) + " (" + pct.toFixed(1) + "%)", GRADE_LABEL[g] + " · " + fmtNum(info.count) + "개"));
-      seg.addEventListener("pointermove", moveTip);
-      seg.addEventListener("pointerleave", hideTip);
-      bar.appendChild(seg);
-    }
-    const key = document.createElement("span");
-    key.className = "key";
-    const sw = document.createElement("span");
-    sw.className = "sw"; sw.style.background = GRADE_COLOR[g];
-    key.appendChild(sw);
-    key.appendChild(document.createTextNode(GRADE_LABEL[g] + " " + fmtNum(info.count) + "개 · " + fmtBytes(info.size)));
-    legend.appendChild(key);
+/* ---------- 직전 스캔 대비 변화 ---------- */
+function fmtDelta(n, isBytes) {
+  if (n === 0) return "0";
+  const v = isBytes ? fmtBytes(Math.abs(n)) : fmtNum(Math.abs(n));
+  return (n > 0 ? "+" : "−") + v;
+}
+function deltaCell(n, isBytes) {
+  const td = document.createElement("td");
+  td.className = "num" + (n > 0 ? " delta-up" : n < 0 ? " delta-down" : "");
+  td.textContent = fmtDelta(n, isBytes);
+  return td;
+}
+async function refreshChanges() {
+  const data = await getJSON("/api/changes?limit=10");
+  const tbody = $("chgRows");
+  tbody.replaceChildren();
+  $("chgEmpty").hidden = data.roots.length > 0;
+  $("chgSummary").textContent = data.roots.map(r =>
+    r.path + ": " + fmtDelta(r.size_delta, true) + " · 파일 " + fmtDelta(r.file_delta, false) + "개 · 정리 후보 " +
+    fmtDelta(r.cleanup_delta, true) + " (" + fmtDate(r.prev_finished_at) + " → " + fmtDate(r.cur_finished_at) + ")"
+  ).join("\n");
+  if (data.roots.length && !data.dirs.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td"); td.colSpan = 4; td.className = "empty"; td.textContent = "변화가 없습니다.";
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+  data.dirs.forEach(d => {
+    const tr = document.createElement("tr");
+    const tdPath = document.createElement("td");
+    tdPath.className = "path";
+    tdPath.textContent = d.path.split(/[\\/]/).pop() + (d.state === "new" ? " (새로 생김)" : d.state === "removed" ? " (삭제됨)" : "");
+    tdPath.title = d.path;
+    const tdSize = document.createElement("td"); tdSize.className = "num"; tdSize.textContent = fmtBytes(d.size);
+    tr.append(tdPath, tdSize, deltaCell(d.size_delta, true), deltaCell(d.file_delta, false));
+    tbody.appendChild(tr);
   });
 }
 
@@ -685,17 +648,14 @@ function renderFiles(files) {
 async function getJSON(url) { const r = await fetch(url); return r.json(); }
 
 async function refreshAll() {
-  const [summary, dist] = await Promise.all([
-    getJSON("/api/summary"), getJSON("/api/distribution"),
-  ]);
+  const summary = await getJSON("/api/summary");
   $("tFiles").textContent = fmtNum(summary.file_count);
   $("tSize").textContent = fmtBytes(summary.total_size);
   $("tScore").textContent = summary.avg_score.toFixed(1);
   $("tCleanup").textContent = fmtBytes(summary.cleanup.size);
   $("tCleanupNote").textContent = summary.cleanup.grades.map(g => GRADE_LABEL[g]).join(" + ") +
     (summary.cleanup.min_size_mb > 0 ? " · " + summary.cleanup.min_size_mb + "MB 이상" : "");
-  renderHist(dist.buckets);
-  renderGrades(summary.grades, summary.total_size);
+  await Promise.all([refreshExtensions(), refreshChanges()]);
   await loadTree();
   if (!$("treeGridView").hidden) { tmStack = []; await loadTreemap(); }
   await refreshRank();

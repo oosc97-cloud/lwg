@@ -203,6 +203,78 @@ def api_top_dirs(q):
     return {"dirs": out}
 
 
+def api_extensions(q):
+    """확장자별 파일 수·용량·정리 후보 용량 (용량 큰 순)."""
+    limit = _int_param(q, "limit", 10, 1, 100)
+    where, params = _cleanup_where()
+    with db.connect(DB_PATH) as conn:
+        total = conn.execute("SELECT COALESCE(SUM(size),0) AS s FROM files").fetchone()["s"]
+        rows = conn.execute(
+            """SELECT ext, COUNT(*) AS n, COALESCE(SUM(size),0) AS s,
+                      COALESCE(SUM(CASE WHEN {} THEN size ELSE 0 END),0) AS c,
+                      ROUND(AVG(score),1) AS avg_score
+               FROM files GROUP BY ext ORDER BY s DESC LIMIT ?""".format(where),
+            params + (limit,),
+        ).fetchall()
+    return {
+        "total_size": total,
+        "extensions": [
+            {"ext": r["ext"], "file_count": r["n"], "size": r["s"],
+             "cleanup_size": r["c"], "avg_score": r["avg_score"]}
+            for r in rows
+        ],
+    }
+
+
+def api_changes(q):
+    """루트별 최근 완료 스캔과 직전 완료 스캔의 디렉터리 집계 비교 (scan_history 기반)."""
+    limit = _int_param(q, "limit", 10, 1, 100)
+    roots, dirs = [], []
+    with db.connect(DB_PATH) as conn:
+        root_rows = conn.execute(
+            """SELECT DISTINCT s.root FROM scans s
+               WHERE s.status = 'done' AND EXISTS (SELECT 1 FROM scan_history h WHERE h.scan_id = s.id)"""
+        ).fetchall()
+        for rr in root_rows:
+            scans = conn.execute(
+                """SELECT id, finished_at FROM scans s WHERE root = ? AND status = 'done'
+                   AND EXISTS (SELECT 1 FROM scan_history h WHERE h.scan_id = s.id)
+                   ORDER BY id DESC LIMIT 2""",
+                (rr["root"],),
+            ).fetchall()
+            if len(scans) < 2:
+                continue
+            cur, prev = scans[0], scans[1]
+            rows = {}
+            for which, scan in (("cur", cur), ("prev", prev)):
+                for h in conn.execute(
+                    "SELECT path, depth, size, file_count, cleanup_size FROM scan_history WHERE scan_id = ?",
+                    (scan["id"],),
+                ):
+                    rows.setdefault(h["path"], {"depth": h["depth"]})[which] = h
+            for path, r in rows.items():
+                c, p = r.get("cur"), r.get("prev")
+                item = {
+                    "path": path,
+                    "size": c["size"] if c else 0,
+                    "size_delta": (c["size"] if c else 0) - (p["size"] if p else 0),
+                    "file_delta": (c["file_count"] if c else 0) - (p["file_count"] if p else 0),
+                    "cleanup_delta": (c["cleanup_size"] if c else 0) - (p["cleanup_size"] if p else 0),
+                    "state": "new" if not p else ("removed" if not c else "changed"),
+                }
+                if r["depth"] == 0:
+                    item.update({
+                        "root": rr["root"],
+                        "prev_finished_at": prev["finished_at"],
+                        "cur_finished_at": cur["finished_at"],
+                    })
+                    roots.append(item)
+                elif r["depth"] == 1 and (item["size_delta"] or item["file_delta"]):
+                    dirs.append(item)
+    dirs.sort(key=lambda d: abs(d["size_delta"]), reverse=True)
+    return {"roots": roots, "dirs": dirs[:limit]}
+
+
 def api_history(q):
     """스캔별 디렉터리 집계 이력. path 미지정 시 각 스캔 루트."""
     path = q.get("path")
@@ -329,6 +401,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(api_files(q))
             if route == "/api/cleanup-candidates":
                 return self._send_json(api_cleanup_candidates(q))
+            if route == "/api/extensions":
+                return self._send_json(api_extensions(q))
+            if route == "/api/changes":
+                return self._send_json(api_changes(q))
             if route == "/api/history":
                 return self._send_json(api_history(q))
             return self._send_json({"detail": "not found"}, 404)

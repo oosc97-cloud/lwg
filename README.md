@@ -92,8 +92,8 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 - 스캔 시작 / 스캔 취소 (취소하면 직전 완료 결과를 유지)
 - 제목 아래에 스캔한 서버의 호스트명·IP 표시 (스캔 시작 시 수집, `scans` 기록과 `/api/scan/status`에 포함)
 - KPI: 총 파일 수 · 총 용량 · 평균 가치점수 · 정리 후보 용량
-- 가치점수 분포 히스토그램 (10점 구간)
-- 등급 구성 스택바 (용량 기준)
+- 확장자별 용량: 상위 10개 확장자의 파일 수·용량·정리 후보 용량
+- 직전 스캔 대비 변화: 최근 두 완료 스캔을 비교해 루트 전체와 1단계 하위 디렉터리의 용량·파일 수 증감 표시
 - 디렉터리 트리: 목록 뷰(TreeSize식 펼침) / 격자 뷰(트리맵, 면적=용량·색=등급)
 - 디렉터리 순위: 루트 기준 깊이별, 용량·정리 후보 용량·파일 수 순
 - 파일 목록: 디렉터리·등급 필터 / 점수·용량·접근·수정 정렬 / 경로 검색
@@ -111,6 +111,8 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 | GET | `/api/top-dirs` | 디렉터리 순위 (`depth` 기본 1, `sort`=size/cleanup/files, `limit`) |
 | GET | `/api/files` | 파일 목록 (root/grade/sort/order/q/limit) |
 | GET | `/api/cleanup-candidates` | 저가치·대용량 정리 후보 (`config.json`의 `cleanup` 기준) |
+| GET | `/api/extensions` | 확장자별 파일 수·용량·정리 후보 용량 (`limit`) |
+| GET | `/api/changes` | 루트별 최근 두 완료 스캔 비교 (루트 합계 + 1단계 디렉터리 증감, `limit`) |
 | GET | `/api/history` | 스캔별 디렉터리 집계 이력 (`path` 미지정 시 스캔 루트) |
 
 ## 설정 (`config.json`)

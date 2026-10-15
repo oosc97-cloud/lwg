@@ -213,7 +213,7 @@
         <option value="auto">자동</option>
         <option value="KB">KB</option>
         <option value="MB">MB</option>
-        <option value="GB">GB</option>
+        <option value="GB" selected>GB</option>
       </select>
     </label>
   </div>
@@ -349,7 +349,7 @@ const METRIC_LABEL = { size: "용량", alloc_size: "할당 용량", file_count: 
 const S = {
   sel: "",            /* 선택한 폴더 경로. "" = 전체(가상 루트) */
   metric: "size",
-  unit: "auto",
+  unit: "GB",          /* 기본 용량 단위 GB 고정 (상단 단위 선택으로 변경 가능) */
   tab: "details",
   sort: { key: "metric", dir: -1 },
   ageBy: "mtime",
@@ -364,7 +364,7 @@ function fmtBytes(n) {
   const u = ["B", "KB", "MB", "GB", "TB"];
   if (S.unit !== "auto") {
     const v = n / Math.pow(1024, u.indexOf(S.unit));
-    return v.toLocaleString("ko-KR", { maximumFractionDigits: v >= 100 ? 0 : 1 }) + " " + S.unit;
+    return v.toLocaleString("ko-KR", { maximumFractionDigits: v >= 100 ? 0 : v >= 1 ? 1 : 2 }) + " " + S.unit;
   }
   if (n === 0) return "0 B";
   const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1);

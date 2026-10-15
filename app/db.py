@@ -41,11 +41,25 @@ CREATE TABLE IF NOT EXISTS dirs (
     scan_id INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dirs_parent ON dirs(parent);
+-- 스캔별 상위 디렉터리 집계 이력 (스냅샷 간 변화 추적용, history.depth 깊이까지)
+CREATE TABLE IF NOT EXISTS scan_history (
+    scan_id INTEGER NOT NULL,
+    root TEXT NOT NULL,
+    path TEXT NOT NULL,
+    depth INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    file_count INTEGER NOT NULL,
+    score_sum REAL NOT NULL,
+    cleanup_size INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_history_path ON scan_history(path, scan_id);
+CREATE INDEX IF NOT EXISTS idx_history_scan ON scan_history(scan_id);
 """
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=30)
+    # Python 3.6의 sqlite3.connect는 Path 객체를 받지 못한다(3.7부터 지원) — str로 넘긴다.
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -59,3 +73,13 @@ def init_db(db_path: Path) -> None:
         if "dir" not in cols:
             conn.execute("ALTER TABLE files ADD COLUMN dir TEXT NOT NULL DEFAULT ''")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_dir ON files(dir)")
+        # dirs.cleanup_size: 정리 대상 등급 파일 용량 합 (디렉터리 순위용)
+        dcols = [r["name"] for r in conn.execute("PRAGMA table_info(dirs)")]
+        if "cleanup_size" not in dcols:
+            conn.execute("ALTER TABLE dirs ADD COLUMN cleanup_size INTEGER NOT NULL DEFAULT 0")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_dirs_depth ON dirs(depth, size)")
+        # 서버 재시작으로 끊긴 스캔은 실패로 정리
+        conn.execute(
+            "UPDATE scans SET status='error', error='서버 재시작으로 중단됨', finished_at=started_at "
+            "WHERE status='running'"
+        )

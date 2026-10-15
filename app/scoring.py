@@ -34,11 +34,16 @@ def value_score(
     return round(min(max(score, 0.0), 100.0), 1)
 
 
-def grade(score: float) -> str:
-    if score >= 70:
+DEFAULT_THRESHOLDS = {"hot": 70, "warm": 40, "cold": 10}
+
+
+def grade(score: float, thresholds: Optional[dict] = None) -> str:
+    """등급 하한은 config.json의 grades에서 조정 (기본 70/40/10)."""
+    t = thresholds or DEFAULT_THRESHOLDS
+    if score >= t["hot"]:
         return "hot"
-    if score >= 40:
+    if score >= t["warm"]:
         return "warm"
-    if score >= 10:
+    if score >= t["cold"]:
         return "cold"
     return "stale"

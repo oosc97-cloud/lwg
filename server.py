@@ -22,9 +22,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "app" / "static"
 
 _scan_lock = threading.Lock()
 _scan_thread = None
+_cancel_event = threading.Event()
 
 GRADES = ("hot", "warm", "cold", "stale")
 SORT_COLUMNS = {"score": "score", "size": "size", "atime": "atime", "mtime": "mtime"}
+DIR_SORT_COLUMNS = {"size": "size", "cleanup": "cleanup_size", "files": "file_count"}
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -59,22 +61,34 @@ def api_start_scan(root):
     with _scan_lock:
         if _scan_thread is not None and _scan_thread.is_alive():
             return 409, {"detail": "이미 스캔이 진행 중입니다."}
+        _cancel_event.clear()
         _scan_thread = threading.Thread(
-            target=scanner.run_scan_many, args=(roots, CFG, DB_PATH), daemon=True
+            target=scanner.run_scan_many, args=(roots, CFG, DB_PATH, _cancel_event), daemon=True
         )
         _scan_thread.start()
     return 200, {"started": True, "roots": roots}
 
 
+def _scan_running():
+    return _scan_thread is not None and _scan_thread.is_alive()
+
+
+def api_cancel_scan():
+    if not _scan_running():
+        return 409, {"detail": "진행 중인 스캔이 없습니다."}
+    _cancel_event.set()
+    return 200, {"cancelling": True}
+
+
 def api_scan_status():
-    running = _scan_thread is not None and _scan_thread.is_alive()
+    running = _scan_running()
     with db.connect(DB_PATH) as conn:
         row = conn.execute("SELECT * FROM scans ORDER BY id DESC LIMIT 1").fetchone()
     if not row:
         return {"status": "running" if running else "none"}
     result = dict(row)
     if running:
-        result["status"] = "running"
+        result["status"] = "cancelling" if _cancel_event.is_set() else "running"
     return result
 
 
@@ -86,6 +100,12 @@ def api_summary():
         by_grade = conn.execute(
             "SELECT grade, COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM files GROUP BY grade"
         ).fetchall()
+        cleanup = conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS s FROM files WHERE {}".format(
+                _cleanup_where()[0]
+            ),
+            _cleanup_where()[1],
+        ).fetchone()
         last = conn.execute(
             "SELECT finished_at, root FROM scans WHERE status='done' ORDER BY id DESC LIMIT 1"
         ).fetchone()
@@ -99,8 +119,23 @@ def api_summary():
         "total_size": total["s"],
         "avg_score": round(total["avg"], 1),
         "grades": grades,
+        "thresholds": CFG["grades"],
+        "cleanup": {
+            "grades": CFG["cleanup"]["grades"],
+            "min_size_mb": CFG["cleanup"]["min_size_mb"],
+            "count": cleanup["n"],
+            "size": cleanup["s"],
+        },
         "last_scan": dict(last) if last else None,
     }
+
+
+def _cleanup_where():
+    """정리 후보 조건: config.json cleanup.grades 등급 + cleanup.min_size_mb 이상."""
+    grades = [g for g in CFG["cleanup"]["grades"] if g in GRADES] or ["stale"]
+    min_size = int(float(CFG["cleanup"]["min_size_mb"]) * 1024 * 1024)
+    sql = "grade IN ({}) AND size >= ?".format(",".join("?" * len(grades)))
+    return sql, tuple(grades) + (min_size,)
 
 
 def api_distribution():
@@ -151,14 +186,51 @@ def api_tree(q):
 
 
 def api_top_dirs(q):
-    limit = _int_param(q, "limit", 10, 1, 50)
+    """디렉터리 순위. depth: 루트 기준 깊이(1=루트 바로 아래), sort: size|cleanup|files."""
+    limit = _int_param(q, "limit", 20, 1, 200)
+    depth = _int_param(q, "depth", 1, 1, 50)
+    col = DIR_SORT_COLUMNS.get(q.get("sort", "size"), "size")
     with db.connect(DB_PATH) as conn:
         rows = conn.execute(
-            """SELECT top_dir, COUNT(*) AS n, SUM(size) AS s, ROUND(AVG(score),1) AS avg_score
-               FROM files GROUP BY top_dir ORDER BY s DESC LIMIT ?""",
-            (limit,),
+            "SELECT * FROM dirs WHERE depth = ? ORDER BY {} DESC LIMIT ?".format(col),
+            (depth, limit),
         ).fetchall()
-    return {"dirs": [dict(r) for r in rows]}
+    out = []
+    for r in rows:
+        d = _dir_row(r)
+        d["cleanup_size"] = r["cleanup_size"]
+        out.append(d)
+    return {"dirs": out}
+
+
+def api_history(q):
+    """스캔별 디렉터리 집계 이력. path 미지정 시 각 스캔 루트."""
+    path = q.get("path")
+    with db.connect(DB_PATH) as conn:
+        if path:
+            rows = conn.execute(
+                """SELECT h.*, s.finished_at FROM scan_history h JOIN scans s ON s.id = h.scan_id
+                   WHERE h.path = ? ORDER BY h.scan_id""",
+                (path,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT h.*, s.finished_at FROM scan_history h JOIN scans s ON s.id = h.scan_id
+                   WHERE h.depth = 0 ORDER BY h.path, h.scan_id"""
+            ).fetchall()
+    out = []
+    for r in rows:
+        count = r["file_count"]
+        out.append({
+            "scan_id": r["scan_id"],
+            "finished_at": r["finished_at"],
+            "path": r["path"],
+            "size": r["size"],
+            "file_count": count,
+            "avg_score": round(r["score_sum"] / count, 1) if count else 0.0,
+            "cleanup_size": r["cleanup_size"],
+        })
+    return {"history": out}
 
 
 def api_files(q):
@@ -190,12 +262,13 @@ def api_files(q):
 
 def api_cleanup_candidates(q):
     limit = _int_param(q, "limit", 50, 1, 500)
+    where, params = _cleanup_where()
     with db.connect(DB_PATH) as conn:
         rows = conn.execute(
             """SELECT path, name, ext, size, atime, mtime, score, grade
-               FROM files WHERE grade IN ('cold','stale')
-               ORDER BY size DESC LIMIT ?""",
-            (limit,),
+               FROM files WHERE {}
+               ORDER BY size DESC LIMIT ?""".format(where),
+            params + (limit,),
         ).fetchall()
     return {"files": [dict(r) for r in rows]}
 
@@ -256,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(api_files(q))
             if route == "/api/cleanup-candidates":
                 return self._send_json(api_cleanup_candidates(q))
+            if route == "/api/history":
+                return self._send_json(api_history(q))
             return self._send_json({"detail": "not found"}, 404)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -276,6 +351,9 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     body = {}
                 status, payload = api_start_scan(body.get("root"))
+                return self._send_json(payload, status)
+            if parsed.path == "/api/scan/cancel":
+                status, payload = api_cancel_scan()
                 return self._send_json(payload, status)
             return self._send_json({"detail": "not found"}, 404)
         except (BrokenPipeError, ConnectionResetError):

@@ -59,6 +59,15 @@
     cursor: pointer;
   }
   button.primary:disabled { opacity: .5; cursor: default; }
+  button.secondary {
+    padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 13px; cursor: pointer;
+  }
+  button.secondary:disabled { opacity: .5; cursor: default; }
+  .headrow select {
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 12px;
+  }
   #scanStatus { color: var(--text-secondary); font-size: 13px; min-height: 18px; margin-bottom: 16px; }
 
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
@@ -163,6 +172,7 @@
 
   <div class="scanbar">
     <button class="primary" id="scanBtn">스캔 시작</button>
+    <button class="secondary" id="cancelBtn" hidden>스캔 취소</button>
     <span id="scanTargets" class="targets"></span>
   </div>
   <div id="scanStatus"></div>
@@ -171,7 +181,7 @@
     <div class="tile"><div class="label">총 파일 수</div><div class="value" id="tFiles">–</div></div>
     <div class="tile"><div class="label">총 용량</div><div class="value" id="tSize">–</div></div>
     <div class="tile"><div class="label">평균 가치점수</div><div class="value" id="tScore">–</div><div class="note">0–100</div></div>
-    <div class="tile"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note">거의 안 씀 + 장기 미사용</div></div>
+    <div class="tile"><div class="label">정리 후보 용량</div><div class="value" id="tCleanup">–</div><div class="note" id="tCleanupNote">거의 안 씀 + 장기 미사용</div></div>
   </div>
 
   <div class="cards">
@@ -209,6 +219,31 @@
         <div id="tmBox"></div>
       </div>
       <div class="empty" id="treeEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
+    </div>
+    <div class="card full">
+      <div class="headrow">
+        <h2>디렉터리 순위</h2>
+        <div class="viewtoggle">
+          <select id="rDepth">
+            <option value="1">1단계 하위</option>
+            <option value="2">2단계 하위</option>
+            <option value="3">3단계 하위</option>
+          </select>
+          <select id="rSort">
+            <option value="size">용량 큰 순</option>
+            <option value="cleanup">정리 후보 용량 큰 순</option>
+            <option value="files">파일 수 많은 순</option>
+          </select>
+        </div>
+      </div>
+      <p class="desc">스캔 루트 기준 깊이별 디렉터리 — 어디를 먼저 정리할지 찾기</p>
+      <table>
+        <thead>
+          <tr><th>디렉터리</th><th class="num">용량</th><th class="num">정리 후보 용량</th><th class="num">비중</th><th class="num">파일 수</th><th class="num">평균 점수</th></tr>
+        </thead>
+        <tbody id="rankRows"></tbody>
+      </table>
+      <div class="empty" id="rankEmpty" hidden>데이터가 없습니다. 스캔을 실행하세요.</div>
     </div>
     <div class="card full">
       <h2>파일 목록</h2>
@@ -658,14 +693,45 @@ async function refreshAll() {
   $("tFiles").textContent = fmtNum(summary.file_count);
   $("tSize").textContent = fmtBytes(summary.total_size);
   $("tScore").textContent = summary.avg_score.toFixed(1);
-  const cleanupSize = summary.grades.cold.size + summary.grades.stale.size;
-  $("tCleanup").textContent = fmtBytes(cleanupSize);
+  $("tCleanup").textContent = fmtBytes(summary.cleanup.size);
+  $("tCleanupNote").textContent = summary.cleanup.grades.map(g => GRADE_LABEL[g]).join(" + ") +
+    (summary.cleanup.min_size_mb > 0 ? " · " + summary.cleanup.min_size_mb + "MB 이상" : "");
   renderHist(dist.buckets);
   renderGrades(summary.grades, summary.total_size);
   await loadTree();
   if (!$("treeGridView").hidden) { tmStack = []; await loadTreemap(); }
+  await refreshRank();
   await refreshFiles();
 }
+
+/* ---------- 디렉터리 순위 ---------- */
+async function refreshRank() {
+  const params = new URLSearchParams({ depth: $("rDepth").value, sort: $("rSort").value, limit: "20" });
+  const data = await getJSON("/api/top-dirs?" + params);
+  const tbody = $("rankRows");
+  tbody.replaceChildren();
+  $("rankEmpty").hidden = data.dirs.length > 0;
+  data.dirs.forEach(d => {
+    const tr = document.createElement("tr");
+    const tdPath = document.createElement("td");
+    tdPath.className = "path"; tdPath.textContent = d.path; tdPath.title = d.path;
+    const tdSize = document.createElement("td");
+    tdSize.className = "num"; tdSize.textContent = fmtBytes(d.size);
+    const tdClean = document.createElement("td");
+    tdClean.className = "num"; tdClean.textContent = fmtBytes(d.cleanup_size);
+    const tdPct = document.createElement("td");
+    tdPct.className = "num"; tdPct.textContent = d.size > 0 ? (d.cleanup_size / d.size * 100).toFixed(1) + "%" : "–";
+    tdPct.title = "용량 중 정리 후보 비중";
+    const tdCount = document.createElement("td");
+    tdCount.className = "num"; tdCount.textContent = fmtNum(d.file_count);
+    const tdScore = document.createElement("td");
+    tdScore.className = "num"; tdScore.textContent = d.avg_score.toFixed(1);
+    tr.append(tdPath, tdSize, tdClean, tdPct, tdCount, tdScore);
+    tbody.appendChild(tr);
+  });
+}
+$("rDepth").addEventListener("change", refreshRank);
+$("rSort").addEventListener("change", refreshRank);
 
 async function refreshFiles() {
   const [sort, order] = $("fSort").value.split(":");
@@ -683,14 +749,20 @@ let polling = null;
 async function pollStatus() {
   const st = await getJSON("/api/scan/status");
   const el = $("scanStatus");
-  if (st.status === "running") {
-    el.textContent = "스캔 중… " + fmtNum(st.file_count) + "개 파일 · " + fmtBytes(st.total_size) + " (" + st.root + ")";
+  if (st.status === "running" || st.status === "cancelling") {
+    el.textContent = (st.status === "cancelling" ? "스캔 취소 중… " : "스캔 중… ") +
+      fmtNum(st.file_count) + "개 파일 · " + fmtBytes(st.total_size) + " (" + st.root + ")";
     $("scanBtn").disabled = true;
+    $("cancelBtn").hidden = false;
+    $("cancelBtn").disabled = st.status === "cancelling";
   } else {
     $("scanBtn").disabled = false;
+    $("cancelBtn").hidden = true;
     if (polling) { clearInterval(polling); polling = null; await refreshAll(); }
     if (st.status === "done") {
       el.textContent = "마지막 스캔 완료: " + st.root + " · " + fmtNum(st.file_count) + "개 · " + fmtBytes(st.total_size);
+    } else if (st.status === "cancelled") {
+      el.textContent = "스캔 취소됨: " + st.root + " · " + fmtNum(st.file_count) + "개까지 반영 (삭제 파일 정리는 다음 완료 스캔에서)";
     } else if (st.status === "error") {
       el.textContent = "스캔 오류: " + (st.error || "알 수 없음");
     } else {
@@ -715,6 +787,16 @@ $("scanBtn").addEventListener("click", async () => {
   pollStatus();
 });
 
+$("cancelBtn").addEventListener("click", async () => {
+  $("cancelBtn").disabled = true;
+  const r = await fetch("/api/scan/cancel", { method: "POST" });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    $("scanStatus").textContent = "취소 실패: " + (err.detail || r.status);
+  }
+  pollStatus();
+});
+
 $("fRoot").addEventListener("change", refreshFiles);
 $("fGrade").addEventListener("change", refreshFiles);
 $("fSort").addEventListener("change", refreshFiles);
@@ -732,7 +814,7 @@ $("fSearch").addEventListener("input", () => {
   }
   await pollStatus();
   const st = await getJSON("/api/scan/status");
-  if (st.status === "running") { $("scanBtn").disabled = true; polling = setInterval(pollStatus, 2000); }
+  if (st.status === "running" || st.status === "cancelling") { $("scanBtn").disabled = true; polling = setInterval(pollStatus, 2000); }
   await refreshAll();
 })();
 </script>

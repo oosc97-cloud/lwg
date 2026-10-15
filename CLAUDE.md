@@ -17,7 +17,8 @@ Deployed by pushing to GitHub, then cloning (test server) or `git archive` tarba
   packages, ever. No f-string `=`, no `X | None` unions, no `ThreadingHTTPServer`
   import (3.7+) — the threaded server is hand-rolled in `server.py`.
 - UI text and code comments are in Korean; keep new user-facing strings Korean.
-- Score/grade thresholds and scan excludes belong in `config.json`, not hardcoded.
+- Score/grade thresholds, cleanup criteria and scan excludes belong in `config.json`, not hardcoded.
+- `sqlite3.connect` needs a `str` on 3.6 (path-like support is 3.7+); `db.connect` converts.
 
 ## Commands
 
@@ -44,14 +45,18 @@ stdlib `http.server` routing in `server.py` → SQLite (`data/fs_agent.db`, giti
 - `app/scoring.py` — the core rule: exponential half-life decay of atime
   (weight 0.6, half-life 30d) and mtime (0.4, 90d) → 0–100 score → grade
   hot/warm/cold/stale (70/40/10 cutoffs). Uses `max(atime, mtime)` because atime
-  updates are often disabled. Korean display labels live only in the frontend
+  updates are often disabled. Cutoffs come from `config.json` `grades`. Korean display labels live only in the frontend
   (`GRADE_LABEL`); DB/API keep English keys.
 - `app/scanner.py` — iterative `os.scandir` walk (no symlinks, permission errors
   skipped), 1000-row upsert batches, live progress via the `scans` row, deletes
   rows for vanished files. Accumulates per-directory totals (propagated to every
   ancestor) in memory → `dirs` table at scan end, which backs the lazy tree/treemap
   (`GET /api/tree`). `run_scan_many` purges data for roots no longer in the scan
-  target set (removes leftovers from old manual scans).
+  target set (removes leftovers from old manual scans). A shared `threading.Event`
+  cancels between directories: status `cancelled`, previous dirs/files kept (a
+  first-ever scan of that root drops its partial rows). On `done`, dirs up to
+  `history.depth` are copied to `scan_history`, pruned to `history.keep_scans`
+  per root — groundwork for phase-2 snapshot diffs (`GET /api/history`).
 - `app/db.py` — one short-lived connection per operation (thread safety), WAL mode,
   in-place migration for the `files.dir` column.
 

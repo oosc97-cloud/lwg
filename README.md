@@ -34,6 +34,8 @@
 | cold | 10–40 | 거의 안 씀 |
 | stale | 10 미만 | 장기 미사용 — 정리 후보 |
 
+등급 경계는 `config.json`의 `grades`, 정리 후보 기준(등급·최소 크기)은 `cleanup`에서 조정합니다.
+
 ## 실행
 
 ```bash
@@ -87,10 +89,12 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 
 ## 대시보드 구성
 
+- 스캔 시작 / 스캔 취소 (취소하면 직전 완료 결과를 유지)
 - KPI: 총 파일 수 · 총 용량 · 평균 가치점수 · 정리 후보 용량
 - 가치점수 분포 히스토그램 (10점 구간)
 - 등급 구성 스택바 (용량 기준)
 - 디렉터리 트리: 목록 뷰(TreeSize식 펼침) / 격자 뷰(트리맵, 면적=용량·색=등급)
+- 디렉터리 순위: 루트 기준 깊이별, 용량·정리 후보 용량·파일 수 순
 - 파일 목록: 디렉터리·등급 필터 / 점수·용량·접근·수정 정렬 / 경로 검색
 
 ## API
@@ -98,16 +102,33 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | POST | `/api/scan` | 스캔 시작 (`{"root": "/shb1"}` 지정 시 해당 경로만, 생략 시 전체 데이터 영역) |
-| GET | `/api/scan/status` | 최근 스캔 상태·진행률 |
+| POST | `/api/scan/cancel` | 진행 중인 스캔 취소 |
+| GET | `/api/scan/status` | 최근 스캔 상태·진행률 (`running`/`cancelling`/`done`/`cancelled`/`error`) |
 | GET | `/api/summary` | 전체 요약 + 등급별 집계 |
 | GET | `/api/distribution` | 점수 10점 구간 히스토그램 |
 | GET | `/api/tree` | 디렉터리 트리 탐색 (`path` 미지정 시 루트, 지정 시 하위 목록) |
-| GET | `/api/top-dirs` | 상위 디렉터리 집계 |
+| GET | `/api/top-dirs` | 디렉터리 순위 (`depth` 기본 1, `sort`=size/cleanup/files, `limit`) |
 | GET | `/api/files` | 파일 목록 (root/grade/sort/order/q/limit) |
-| GET | `/api/cleanup-candidates` | 저가치·대용량 정리 후보 |
+| GET | `/api/cleanup-candidates` | 저가치·대용량 정리 후보 (`config.json`의 `cleanup` 기준) |
+| GET | `/api/history` | 스캔별 디렉터리 집계 이력 (`path` 미지정 시 스캔 루트) |
+
+## 설정 (`config.json`)
+
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `scan_roots` | `[]` | 지정 시 플랫폼 기본 루트 대신 사용 |
+| `linux_excludes` / `windows_excludes` | 가상·OS 영역 | 제외할 경로 |
+| `exclude_names` | `.git` 등 | 이름으로 제외할 디렉터리 |
+| `score` | 0.6 / 0.4 / 30일 / 90일 | 가중치와 반감기 |
+| `grades` | `{"hot": 70, "warm": 40, "cold": 10}` | 등급별 하한 점수 |
+| `cleanup` | `{"grades": ["cold", "stale"], "min_size_mb": 0}` | 정리 후보 등급과 최소 크기 |
+| `history` | `{"keep_scans": 10, "depth": 2}` | 루트별 보관할 완료 스캔 수와 이력에 남길 디렉터리 깊이 |
+| `db_path` | `data/fs_agent.db` | SQLite 위치 |
+
+`grades`나 `cleanup`을 바꾸면 다음 스캔부터 반영됩니다.
 
 ## 향후 확장 (2단계)
 
 - LLM(Claude API) 연동: 스캔 결과 요약·정리 제안 자연어 리포트
-- 스케줄 스캔(cron) 및 스냅샷 간 변화 추적
+- 스케줄 스캔(cron) 및 스냅샷 간 변화 추적 (`scan_history` 테이블에 스캔별 집계를 이미 보관)
 - 다중 서버 중앙 수집형 구성

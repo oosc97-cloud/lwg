@@ -28,8 +28,16 @@ DEFAULTS = {
         "atime_half_life_days": 30,
         "mtime_half_life_days": 90,
     },
+    # 등급 하한 점수: hot ≥ 70, warm ≥ 40, cold ≥ 10, 나머지 stale
+    "grades": {"hot": 70, "warm": 40, "cold": 10},
+    # 정리 후보: 이 등급들 중 min_size_mb 이상인 파일
+    "cleanup": {"grades": ["cold", "stale"], "min_size_mb": 0},
+    # 스캔 이력: 루트별 완료 스캔 keep_scans개, 루트 기준 depth 깊이까지 디렉터리 집계 보관
+    "history": {"keep_scans": 10, "depth": 2},
     "db_path": "data/fs_agent.db",
 }
+
+NESTED_KEYS = ("score", "grades", "cleanup", "history")
 
 
 def load_config() -> dict:
@@ -38,8 +46,8 @@ def load_config() -> dict:
         with open(CONFIG_PATH, encoding="utf-8") as f:
             user = json.load(f)
         for key, value in user.items():
-            if key == "score" and isinstance(value, dict):
-                cfg["score"] = {**DEFAULTS["score"], **value}
+            if key in NESTED_KEYS and isinstance(value, dict):
+                cfg[key] = {**DEFAULTS[key], **value}
             else:
                 cfg[key] = value
     return cfg

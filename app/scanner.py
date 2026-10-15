@@ -24,9 +24,18 @@ ON CONFLICT(path) DO UPDATE SET
 """
 
 DIR_INSERT = """
-INSERT OR REPLACE INTO dirs (path, parent, name, depth, size, file_count, score_sum, scan_id)
+INSERT OR REPLACE INTO dirs (path, parent, name, depth, size, file_count, score_sum, scan_id, cleanup_size)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+HISTORY_INSERT = """
+INSERT INTO scan_history (scan_id, root, path, depth, size, file_count, score_sum, cleanup_size)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
+
+
+class ScanCancelled(Exception):
+    """사용자가 스캔을 취소함."""
 
 
 def _norm(path: str) -> str:
@@ -34,13 +43,18 @@ def _norm(path: str) -> str:
     return p.lower() if sys.platform == "win32" else p
 
 
-def run_scan_many(roots, cfg: dict, db_path: Path) -> None:
+def run_scan_many(roots, cfg: dict, db_path: Path, cancel_event=None) -> None:
     """여러 데이터 영역을 순차 스캔. 한 루트가 실패해도 나머지는 계속한다.
-    스캔 전에 대상 밖 루트(과거 수동 스캔 잔재)의 데이터를 정리한다."""
+    스캔 전에 대상 밖 루트(과거 수동 스캔 잔재)의 데이터를 정리한다.
+    cancel_event가 set되면 진행 중인 루트를 멈추고 남은 루트도 건너뛴다."""
     purge_other_roots(roots, db_path)
     for root in roots:
+        if cancel_event is not None and cancel_event.is_set():
+            break
         try:
-            run_scan(root, cfg, db_path)
+            run_scan(root, cfg, db_path, cancel_event)
+        except ScanCancelled:
+            break
         except Exception:
             continue
 
@@ -50,9 +64,12 @@ def purge_other_roots(roots, db_path: Path) -> None:
     keep = {os.path.normpath(r) for r in roots}
     conn = db.connect(db_path)
     try:
-        rows = conn.execute("SELECT path FROM dirs WHERE parent = ''").fetchall()
+        # 디렉터리 집계가 없는 루트(첫 스캔이 취소·실패한 경우)도 scans 기록으로 찾는다
+        rows = conn.execute(
+            "SELECT path FROM dirs WHERE parent = '' UNION SELECT root FROM scans"
+        ).fetchall()
         for row in rows:
-            p = row["path"]
+            p = os.path.normpath(row[0])
             if p in keep:
                 continue
             like = os.path.join(p, "%")
@@ -63,8 +80,10 @@ def purge_other_roots(roots, db_path: Path) -> None:
         conn.close()
 
 
-def run_scan(root: str, cfg: dict, db_path: Path) -> int:
+def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
     score_cfg = cfg["score"]
+    thresholds = cfg["grades"]
+    cleanup_grades = set(cfg["cleanup"]["grades"])
     if sys.platform == "win32":
         exclude_paths = {_norm(p) for p in cfg.get("windows_excludes", [])}
     else:
@@ -82,8 +101,9 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
     batch = []
     file_count = 0
     total_size = 0
-    # TreeSize식 트리 뷰용: 디렉터리별 [누적 용량, 파일 수, 점수 합] (조상 디렉터리까지 전파)
-    dir_stats = defaultdict(lambda: [0, 0, 0.0])
+    # TreeSize식 트리 뷰용: 디렉터리별 [누적 용량, 파일 수, 점수 합, 정리 대상 용량]
+    # (조상 디렉터리까지 전파)
+    dir_stats = defaultdict(lambda: [0, 0, 0.0, 0])
 
     def flush():
         nonlocal file_count, total_size
@@ -102,6 +122,8 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
         dir_stats[root_norm]  # 파일이 하나도 없어도 루트는 트리에 0 B로 표시
         stack = [root_norm]
         while stack:
+            if cancel_event is not None and cancel_event.is_set():
+                raise ScanCancelled()
             current = stack.pop()
             try:
                 entries = os.scandir(current)
@@ -129,6 +151,8 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
                                 atime_half_life_days=score_cfg["atime_half_life_days"],
                                 mtime_half_life_days=score_cfg["mtime_half_life_days"],
                             )
+                            g = grade(score, thresholds)
+                            cleanup = st.st_size if g in cleanup_grades else 0
                             rel = os.path.relpath(entry.path, root_norm)
                             top_dir = rel.split(os.sep)[0] if os.sep in rel else "(루트)"
                             ext = os.path.splitext(entry.name)[1].lower() or "(없음)"
@@ -139,6 +163,7 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
                                 stats[0] += st.st_size
                                 stats[1] += 1
                                 stats[2] += score
+                                stats[3] += cleanup
                                 if p == root_norm:
                                     break
                                 nxt = os.path.dirname(p)
@@ -156,7 +181,7 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
                                     st.st_atime,
                                     st.st_mtime,
                                     score,
-                                    grade(score),
+                                    g,
                                     scan_id,
                                 )
                             )
@@ -172,8 +197,10 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
         conn.execute("DELETE FROM files WHERE path LIKE ? AND scan_id != ?", (like, scan_id))
         # 디렉터리 집계 저장 (루트 하위 트리 전체 교체)
         conn.execute("DELETE FROM dirs WHERE path = ? OR path LIKE ?", (root_norm, like))
+        history_depth = int(cfg["history"]["depth"])
         dir_rows = []
-        for p, (size, count, score_sum) in dir_stats.items():
+        history_rows = []
+        for p, (size, count, score_sum, cleanup_size) in dir_stats.items():
             if p == root_norm:
                 parent, depth = "", 0
             else:
@@ -181,17 +208,37 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
                 rel = os.path.relpath(p, root_norm)
                 depth = rel.count(os.sep) + 1
             name = os.path.basename(p) or p
-            dir_rows.append((p, parent, name, depth, size, count, score_sum, scan_id))
+            dir_rows.append((p, parent, name, depth, size, count, score_sum, scan_id, cleanup_size))
+            if depth <= history_depth:
+                history_rows.append(
+                    (scan_id, root_norm, p, depth, size, count, score_sum, cleanup_size)
+                )
             if len(dir_rows) >= BATCH_SIZE:
                 conn.executemany(DIR_INSERT, dir_rows)
                 dir_rows.clear()
         if dir_rows:
             conn.executemany(DIR_INSERT, dir_rows)
+        conn.executemany(HISTORY_INSERT, history_rows)
         conn.execute(
             "UPDATE scans SET finished_at=?, status='done', file_count=?, total_size=? WHERE id=?",
             (time.time(), file_count, total_size, scan_id),
         )
+        prune_history(conn, root, int(cfg["history"]["keep_scans"]))
         conn.commit()
+    except ScanCancelled:
+        # 취소 시 삭제 파일 정리·디렉터리 집계 교체는 하지 않는다 (직전 결과 유지).
+        # 직전 완료 결과가 없는 루트면 일부만 담긴 파일 목록을 남기지 않는다.
+        has_previous = conn.execute(
+            "SELECT 1 FROM dirs WHERE path = ? AND parent = ''", (root_norm,)
+        ).fetchone()
+        if not has_previous:
+            conn.execute("DELETE FROM files WHERE scan_id = ?", (scan_id,))
+        conn.execute(
+            "UPDATE scans SET finished_at=?, status='cancelled', file_count=?, total_size=? WHERE id=?",
+            (time.time(), file_count, total_size, scan_id),
+        )
+        conn.commit()
+        raise
     except Exception as exc:  # 스캔 스레드 실패를 상태로 남긴다
         conn.execute(
             "UPDATE scans SET finished_at=?, status='error', error=? WHERE id=?",
@@ -202,3 +249,13 @@ def run_scan(root: str, cfg: dict, db_path: Path) -> int:
     finally:
         conn.close()
     return file_count
+
+
+def prune_history(conn, root: str, keep: int) -> None:
+    """루트별로 최근 완료 스캔 keep개의 이력만 남긴다."""
+    rows = conn.execute(
+        "SELECT id FROM scans WHERE root = ? AND status = 'done' ORDER BY id DESC",
+        (root,),
+    ).fetchall()
+    for row in rows[max(keep, 1):]:
+        conn.execute("DELETE FROM scan_history WHERE scan_id = ?", (row["id"],))

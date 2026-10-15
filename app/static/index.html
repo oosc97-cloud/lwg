@@ -52,7 +52,6 @@
     display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
     margin: 20px 0 8px;
   }
-  .scanbar .targets { color: var(--text-muted); font-size: 13px; }
   button.primary {
     padding: 8px 16px; border: none; border-radius: 8px;
     background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
@@ -173,7 +172,6 @@
   <div class="scanbar">
     <button class="primary" id="scanBtn">스캔 시작</button>
     <button class="secondary" id="cancelBtn" hidden>스캔 취소</button>
-    <span id="scanTargets" class="targets"></span>
   </div>
   <div id="scanStatus"></div>
 
@@ -808,10 +806,6 @@ $("fSearch").addEventListener("input", () => {
 
 /* ---------- 초기화 ---------- */
 (async () => {
-  const roots = await getJSON("/api/roots");
-  if (roots.roots.length) {
-    $("scanTargets").textContent = "대상: " + roots.roots.join(", ");
-  }
   await pollStatus();
   const st = await getJSON("/api/scan/status");
   if (st.status === "running" || st.status === "cancelling") { $("scanBtn").disabled = true; polling = setInterval(pollStatus, 2000); }

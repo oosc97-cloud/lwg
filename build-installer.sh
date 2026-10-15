@@ -12,7 +12,7 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$STAGE/fs-agent" dist
-cp -a server.py config.json README.md "$STAGE/fs-agent/"
+cp -a server.py config.json README.md MANUAL.md "$STAGE/fs-agent/"
 mkdir -p "$STAGE/fs-agent/app"
 ( cd app && find . -name '__pycache__' -prune -o -type f ! -name '*.pyc' -print | while read -r f; do
     mkdir -p "$STAGE/fs-agent/app/$(dirname "$f")"; cp -a "$f" "$STAGE/fs-agent/app/$f"; done )

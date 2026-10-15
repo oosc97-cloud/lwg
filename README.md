@@ -89,7 +89,7 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 
 ## 대시보드 구성 (TreeSize 방식)
 
-- 상단: 스캔 시작/취소, 스캔한 서버의 호스트명·IP, 마지막 스캔 시각, **기준**(용량/할당 용량/파일 수)과 **단위**(자동/KB/MB/GB) 선택
+- 상단: 스캔 시작/취소, 초기화(확인 후 저장된 결과 전체 삭제, 스캔 중 비활성), 스캔한 서버의 호스트명·IP, 마지막 스캔 시각, **기준**(용량/할당 용량/파일 수)과 **단위**(자동/KB/MB/GB) 선택
 - KPI: 총 용량 · 총 파일 수 · 총 폴더 수 · 평균 가치점수 · 정리 후보 용량
 - 경로 표시줄: 선택한 폴더까지의 경로(클릭 이동), ↑ 상위
 - 왼쪽 폴더 트리: 펼침(▶), 상위 대비 비중 막대·크기·%, `[파일 N개]` 행(그 폴더 바로 아래 파일 합계). 기준 선택에 따라 정렬·비중이 바뀜
@@ -110,6 +110,7 @@ systemctl daemon-reload && systemctl enable --now fs-agent
 |---|---|---|
 | POST | `/api/scan` | 스캔 시작 (`{"root": "/shb1"}` 지정 시 해당 경로만, 생략 시 전체 데이터 영역) |
 | POST | `/api/scan/cancel` | 진행 중인 스캔 취소 |
+| POST | `/api/reset` | 저장된 스캔 결과 전체 삭제(처음 상태로, 실제 파일은 그대로). 스캔 중이면 409 |
 | GET | `/api/scan/status` | 최근 스캔 상태·진행률 (`running`/`cancelling`/`done`/`cancelled`/`error`) |
 | GET | `/api/summary` | 전체 요약 + 등급별 집계 |
 | GET | `/api/distribution` | 점수 10점 구간 히스토그램 |

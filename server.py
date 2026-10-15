@@ -70,6 +70,23 @@ def api_start_scan(root):
     return 200, {"started": True, "roots": roots}
 
 
+def api_reset():
+    """저장된 스캔 결과 전체 삭제 (처음 설치한 상태로). 스캔 중에는 거부."""
+    with _scan_lock:
+        if _scan_thread is not None and _scan_thread.is_alive():
+            return 409, {"detail": "스캔 중에는 초기화할 수 없습니다. 먼저 스캔을 취소하세요."}
+        with db.connect(DB_PATH) as conn:
+            for table in ("files", "dirs", "scan_history", "scans"):
+                conn.execute("DELETE FROM " + table)
+        conn = db.connect(DB_PATH)
+        try:
+            conn.isolation_level = None  # VACUUM은 트랜잭션 밖에서만 가능
+            conn.execute("VACUUM")
+        finally:
+            conn.close()
+    return 200, {"reset": True}
+
+
 def _scan_running():
     return _scan_thread is not None and _scan_thread.is_alive()
 
@@ -485,6 +502,9 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     body = {}
                 status, payload = api_start_scan(body.get("root"))
+                return self._send_json(payload, status)
+            if parsed.path == "/api/reset":
+                status, payload = api_reset()
                 return self._send_json(payload, status)
             if parsed.path == "/api/scan/cancel":
                 status, payload = api_cancel_scan()

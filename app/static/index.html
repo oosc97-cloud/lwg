@@ -198,6 +198,7 @@
     <span id="hostInfo"></span>
     <button class="primary" id="scanBtn">스캔 시작</button>
     <button class="secondary" id="cancelBtn" hidden>스캔 취소</button>
+    <button class="secondary" id="resetBtn" title="저장된 스캔 결과를 모두 지웁니다">초기화</button>
     <span id="scanStatus"></span>
     <span class="spacer"></span>
     <label class="tool">기준
@@ -1080,10 +1081,12 @@ async function pollStatus() {
     $("scanBtn").disabled = true;
     $("cancelBtn").hidden = false;
     $("cancelBtn").disabled = st.status === "cancelling";
+    $("resetBtn").disabled = true;
     if (!polling) polling = setInterval(pollStatus, 2000);
   } else {
     $("scanBtn").disabled = false;
     $("cancelBtn").hidden = true;
+    $("resetBtn").disabled = false;
     if (polling) { clearInterval(polling); polling = null; await refreshAll(); }
     if (st.status === "done") {
       s.textContent = "마지막 스캔 " + (st.finished_at ? fmtDateTime(st.finished_at) + " · " : "") + st.root;
@@ -1117,6 +1120,22 @@ $("cancelBtn").addEventListener("click", async () => {
     $("scanStatus").textContent = "취소 실패: " + (err.detail || r.status);
   }
   pollStatus();
+});
+
+$("resetBtn").addEventListener("click", async () => {
+  if (!confirm("저장된 스캔 결과를 모두 지우고 처음 상태로 되돌립니다.\n(실제 파일은 건드리지 않습니다) 계속할까요?")) return;
+  $("resetBtn").disabled = true;
+  const r = await fetch("/api/reset", { method: "POST" });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    $("scanStatus").textContent = "초기화 실패: " + (err.detail || r.status);
+    $("resetBtn").disabled = false;
+    return;
+  }
+  S.sel = "";
+  await pollStatus();
+  await refreshAll();
+  $("scanStatus").textContent = "초기화했습니다. 스캔 시작을 눌러 새로 스캔하세요.";
 });
 
 let resizeTimer = null;

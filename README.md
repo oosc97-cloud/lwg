@@ -39,17 +39,20 @@
 ## 실행
 
 ```bash
-python3 server.py --host 0.0.0.0 --port 8000
+./restart.sh          # 이 폴더의 fs-agent만 멈추고 다시 띄움 (로그: fs-agent.log)
+./stop.sh             # 이 폴더의 fs-agent만 중지
+python3 server.py     # 포그라운드 실행 (기본 0.0.0.0:15891)
 ```
 
-pip, venv, 인터넷 연결 모두 불필요. 브라우저에서 `http://<서버IP>:<포트>` 접속 →
+pip, venv, 인터넷 연결 모두 불필요. 브라우저에서 `http://<서버IP>:15891` 접속 →
 **스캔 시작**. 결과는 `data/fs_agent.db`(SQLite)에 저장되어 재시작 후에도 유지됩니다.
 
-백그라운드 실행:
-
-```bash
-nohup python3 server.py --port 8000 > fs-agent.log 2>&1 &
-```
+- 포트는 `config.json`의 `"port"`(기본 15891) 또는 `--port`로 바꿉니다 (`./restart.sh --port 15892`).
+- **포트 충돌 방지**: 시작할 때 그 포트에 이미 LISTEN 중인 프로세스가 있으면 에이전트는 시작하지 않고
+  메시지를 남긴 뒤 종료 코드 1로 끝납니다. 기존 프로세스는 건드리지 않습니다.
+- 같은 폴더의 에이전트가 이미 떠 있으면(`fs-agent.pid`) 중복 실행도 거부합니다.
+- `restart.sh`/`stop.sh`는 작업 폴더가 이 폴더인 `python3 server.py` 프로세스만 멈춥니다.
+  같은 서버의 다른 프로그램(다른 폴더의 `server.py` 등)은 대상이 아닙니다.
 
 ## 폐쇄망 배포
 
@@ -63,7 +66,7 @@ git archive --format=tar.gz -o fs-agent.tar.gz HEAD
 
 ```bash
 mkdir -p /opt/fs-agent && tar xzf fs-agent.tar.gz -C /opt/fs-agent
-python3 /opt/fs-agent/server.py --port 8000
+cd /opt/fs-agent && ./restart.sh
 ```
 
 부팅 시 자동 시작(systemd):
@@ -76,8 +79,9 @@ After=network.target
 
 [Service]
 WorkingDirectory=/opt/fs-agent
-ExecStart=/usr/bin/python3 /opt/fs-agent/server.py --port 8000
+ExecStart=/usr/bin/cd /opt/fs-agent && ./restart.sh
 Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target

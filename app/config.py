@@ -9,6 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "config.json"
 
 DEFAULTS = {
+    "port": 15891,  # 웹 대시보드 포트 (--port로 덮어쓰기)
     "scan_roots": [],
     "windows_excludes": [
         "C:\\Windows",

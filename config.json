@@ -1,4 +1,5 @@
 {
+  "port": 15891,
   "scan_roots": [],
   "windows_excludes": [
     "C:\\Windows",

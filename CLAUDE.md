@@ -23,7 +23,8 @@ Deployed by pushing to GitHub, then cloning (test server) or `git archive` tarba
 ## Commands
 
 ```bash
-python3 server.py --host 0.0.0.0 --port 8000   # serve dashboard; no install step
+python3 server.py                 # serve dashboard on 0.0.0.0:15891 (config.json "port"); no install step
+./restart.sh / ./stop.sh          # start/stop only this folder's agent (cwd-matched, never pkill -f)
 ```
 
 No test suite or linter is configured yet.
@@ -33,7 +34,10 @@ No test suite or linter is configured yet.
 Request flow: `app/static/index.html` (vanilla JS dashboard, single file) →
 stdlib `http.server` routing in `server.py` → SQLite (`data/fs_agent.db`, gitignored).
 
-- `server.py` — entrypoint. ThreadingMixIn HTTP server, manual URL routing,
+- `server.py` — entrypoint. Refuses to start (exit 1) if the port already has a
+  LISTENer or `fs-agent.pid` points at a live instance; `db.init_db` runs only after
+  those checks so a second launch can't flip the live instance's running scan to error.
+  Windows binds with `SO_EXCLUSIVEADDRUSE` (its `SO_REUSEADDR` can steal ports). ThreadingMixIn HTTP server, manual URL routing,
   `api_*` functions port each endpoint; JSON errors as `{"detail": ...}` (the
   frontend reads `err.detail`). Holds the scan thread + `_scan_lock` (one scan
   at a time; `api_scan_status` reports "running" while the thread lives so

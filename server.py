@@ -1,11 +1,15 @@
 """표준 라이브러리 전용 HTTP 서버 — 폐쇄망 RHEL 8 (Python 3.6+) 대상.
 
 외부 패키지 없이 http.server + sqlite3 만으로 API와 대시보드를 제공한다.
-실행: python3 server.py [--host 0.0.0.0] [--port 8000]
+실행: python3 server.py [--host 0.0.0.0] [--port 15891]
 """
 import argparse
+import errno
 import json
 import os
+import signal
+import socket
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -18,7 +22,7 @@ from app.config import load_config, resolve_db_path, resolve_scan_roots
 
 CFG = load_config()
 DB_PATH = resolve_db_path(CFG)
-db.init_db(DB_PATH)
+# db.init_db는 main()에서 중복 실행 검사 뒤에 호출 (이미 떠 있는 인스턴스의 '진행 중' 스캔을 망가뜨리지 않게)
 STATIC_DIR = Path(__file__).resolve().parent / "app" / "static"
 
 _scan_lock = threading.Lock()
@@ -519,21 +523,97 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
+PID_FILE = Path(__file__).resolve().parent / "fs-agent.pid"
+
+
 class ThreadingServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
+    # Linux의 SO_REUSEADDR는 TIME_WAIT 포트 재사용만 허용하고, LISTEN 중인 포트는 bind 자체가 실패한다.
+    # Windows에서는 SO_REUSEADDR가 남의 LISTEN 포트를 가로챌 수 있으므로 끄고 독점 바인딩을 쓴다.
+    allow_reuse_address = os.name != "nt"
+
+    def server_bind(self):
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        HTTPServer.server_bind(self)
+
+
+def _fail(msg):
+    sys.stderr.write("[fs-agent] 시작 중단: " + msg + "\n")
+    sys.exit(1)
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError as e:
+        return e.errno == errno.EPERM
+    return True
+
+
+def _check_pid_file():
+    """같은 폴더의 에이전트가 이미 실행 중이면 중단 (pid 파일 기준)."""
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return
+    if pid != os.getpid() and _pid_alive(pid):
+        _fail("이 폴더의 fs-agent가 이미 실행 중입니다 (PID %d). 재기동은 restart.sh를 사용하세요." % pid)
+
+
+def _port_in_use(host, port):
+    """해당 포트에 LISTEN 중인 프로세스가 있는지 접속 시도로 확인."""
+    # 0.0.0.0 바인딩이면 루프백으로 확인 (특정 IP에만 LISTEN 중인 경우는 아래 bind 실패로 걸러짐)
+    targets = ["127.0.0.1"] if host in ("", "0.0.0.0", "::") else [host]
+    for target in targets:
+        try:
+            with socket.create_connection((target, port), timeout=1):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _remove_pid_file():
+    try:
+        if PID_FILE.read_text().strip() == str(os.getpid()):
+            PID_FILE.unlink()
+    except OSError:
+        pass
 
 
 def main():
     ap = argparse.ArgumentParser(description="파일시스템 추적 관리 에이전트")
-    ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--host", default=CFG.get("host", "0.0.0.0"))
+    ap.add_argument("--port", type=int, default=int(CFG.get("port", 15891)))
     args = ap.parse_args()
-    srv = ThreadingServer((args.host, args.port), Handler)
-    print("fs-agent serving on http://%s:%d" % (args.host, args.port))
+
+    in_use_msg = ("%d 포트를 이미 다른 프로세스가 사용(LISTEN) 중입니다. 기존 프로세스는 건드리지 않습니다. "
+                  "'ss -ltnp | grep :%d'로 사용 중인 프로세스를 확인하거나, "
+                  "--port <다른 포트> 또는 config.json의 \"port\"로 다른 포트를 지정하세요." % (args.port, args.port))
+    _check_pid_file()
+    if _port_in_use(args.host, args.port):
+        _fail(in_use_msg)
+    try:
+        srv = ThreadingServer((args.host, args.port), Handler)
+    except OSError as e:
+        if e.errno in (errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", -1), errno.EACCES):
+            _fail(in_use_msg if e.errno != errno.EACCES else "%d 포트에 바인딩할 권한이 없습니다: %s" % (args.port, e))
+        raise
+
+    db.init_db(DB_PATH)
+    PID_FILE.write_text(str(os.getpid()))
+    # kill(SIGTERM)로 종료해도 pid 파일을 정리하도록
+    signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+    print("fs-agent serving on http://%s:%d (PID %d)" % (args.host, args.port, os.getpid()))
+    sys.stdout.flush()
     try:
         srv.serve_forever()
-    except KeyboardInterrupt:
-        srv.shutdown()
+    except (KeyboardInterrupt, SystemExit):
+        pass
+    finally:
+        srv.server_close()
+        _remove_pid_file()
 
 
 if __name__ == "__main__":

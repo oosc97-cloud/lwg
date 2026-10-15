@@ -135,7 +135,15 @@ for r in resolve_scan_roots(load_config()):
 EOF
 )
   if [ -z "$roots" ]; then
-    warn "스캔 대상 폴더가 없습니다 (포함 대상: /shb*, /nbs*). 이 상태에서는 아무것도 스캔하지 않습니다. 필요하면 $PREFIX/config.json의 scan_include를 수정하세요."
+    local pats
+    pats=$("$PY" - "$PREFIX" <<'EOF' 2>/dev/null
+import sys
+sys.path.insert(0, sys.argv[1])
+from app.config import load_config, scan_include_patterns
+print(", ".join(scan_include_patterns(load_config())))
+EOF
+)
+    warn "스캔 대상 폴더가 없습니다 (포함 대상: $pats). 이 상태에서는 아무것도 스캔하지 않습니다. 필요하면 $PREFIX/config.json의 scan_include를 수정하세요."
     return
   fi
   info "스캔 대상: $(echo $roots)"

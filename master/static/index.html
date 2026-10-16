@@ -127,8 +127,8 @@
   <div class="topbar">
     <h1>파일시스템 Master</h1>
     <span class="sub">여러 서버의 fs-agent 통합 화면</span>
-    <button class="primary" id="pollBtn" title="등록된 모든 에이전트에서 지금 바로 수집합니다">지금 수집</button>
-    <button class="secondary" id="scanAllBtn" title="사용 중인 모든 에이전트에 스캔 시작을 요청합니다">전체 스캔 시작</button>
+    <button class="primary" id="pollBtn" title="등록된 모든 에이전트에서 지금 바로 수집합니다">전체 수집</button>
+    <button class="secondary" id="scanAllBtn" title="사용 중인 모든 에이전트에 스캔 시작을 요청합니다">전체 스캔</button>
     <span id="actionMsg"></span>
     <span class="spacer"></span>
     <span id="pollInfo"></span>
@@ -165,7 +165,13 @@
     </div>
     <div class="pane-body">
       <div class="tabpane" id="tab-servers">
-        <div class="tabtools">서버 이름을 누르면 그 서버의 상세 화면(폴더 트리·차트·검색)이 열립니다. 열 머리글을 누르면 정렬합니다.</div>
+        <div class="tabtools">
+          <span id="selInfo">선택 0대</span>
+          <button class="secondary" id="selPollBtn" disabled>선택 수집</button>
+          <button class="secondary" id="selScanBtn" disabled>선택 스캔</button>
+          <button class="secondary" id="selDelBtn" disabled>선택 삭제</button>
+          <span>· 서버 이름을 누르면 그 서버의 상세 화면이 열립니다. 열 머리글을 누르면 정렬합니다.</span>
+        </div>
         <table>
           <thead><tr id="srvHead"></tr></thead>
           <tbody id="srvRows"></tbody>
@@ -228,7 +234,7 @@ const GRADES = ["hot", "warm", "cold", "stale"];
 const GRADE_COLOR = { stale: "#86b6ef", cold: "#5598e7", warm: "#2a78d6", hot: "#184f95" };
 const GRADE_LABEL = { hot: "자주 사용", warm: "가끔 사용", cold: "거의 안 씀", stale: "장기 미사용" };
 
-const S = { unit: "GB", tab: "servers", agents: [], allowControl: true, interval: 300,
+const S = { selected: new Set(), unit: "GB", tab: "servers", agents: [], allowControl: true, interval: 300,
             sort: { key: "size", dir: -1 }, cleanup: null, lastLoad: 0 };
 
 /* ---------- 포맷 ---------- */
@@ -368,6 +374,7 @@ function renderKpis() {
 
 /* ---------- 서버 표 ---------- */
 const SRV_COLS = [
+  { key: "sel", label: "", nosort: true },
   { key: "status", label: "상태" },
   { key: "name", label: "서버" },
   { key: "size", label: "총 용량", num: true },
@@ -398,6 +405,17 @@ function renderServerHead() {
   tr.textContent = "";
   SRV_COLS.forEach(c => {
     const th = el("th", (c.num ? "num " : "") + (c.nosort ? "" : "sortable"), c.label);
+    if (c.key === "sel") {
+      const all = el("input"); all.type = "checkbox"; all.title = "전체 선택";
+      const n = S.agents.filter(a => S.selected.has(a.id)).length;
+      all.checked = n > 0 && n === S.agents.length;
+      all.indeterminate = n > 0 && n < S.agents.length;
+      all.addEventListener("change", () => {
+        S.selected = new Set(all.checked ? S.agents.map(a => a.id) : []);
+        renderServers();
+      });
+      th.appendChild(all);
+    }
     if (!c.nosort) {
       if (S.sort.key === c.key) th.appendChild(el("span", "arrow", S.sort.dir < 0 ? "▼" : "▲"));
       th.addEventListener("click", () => {
@@ -439,6 +457,12 @@ function renderServers() {
   list.forEach(a => {
     const s = a.summary;
     const tr = el("tr");
+    const cb = el("input"); cb.type = "checkbox"; cb.checked = S.selected.has(a.id);
+    cb.addEventListener("change", () => {
+      if (cb.checked) S.selected.add(a.id); else S.selected.delete(a.id);
+      renderServerHead(); updateSelBar();
+    });
+    const cbc = el("td"); cbc.appendChild(cb); tr.appendChild(cbc);
     tr.appendChild(statusCell(a));
     const name = el("td");
     const link = el("a", null, agentLabel(a));
@@ -474,13 +498,54 @@ function renderServers() {
       b.addEventListener("click", () => agentScan(a, scanning));
       box.appendChild(b);
     }
-    const p = el("button", "mini", "수집");
-    p.title = "이 서버만 지금 수집";
-    p.addEventListener("click", async () => { await api("/api/agents/" + a.id + "/poll", "POST", {}); flash("수집 요청: " + agentLabel(a)); setTimeout(load, 1500); });
-    box.appendChild(p);
     act.appendChild(box); tr.appendChild(act);
     tb.appendChild(tr);
   });
+  updateSelBar();
+}
+/* ---------- 선택한 서버 동작 (체크박스) ---------- */
+function selectedAgents() { return S.agents.filter(a => S.selected.has(a.id)); }
+function updateSelBar() {
+  const n = selectedAgents().length;
+  $("selInfo").textContent = "선택 " + n + "대";
+  $("selPollBtn").disabled = !n;
+  $("selScanBtn").disabled = !n;
+  $("selScanBtn").hidden = !S.allowControl;
+  $("selDelBtn").disabled = !n;
+}
+$("selPollBtn").addEventListener("click", async () => {
+  const sel = selectedAgents();
+  await api("/api/poll", "POST", { ids: sel.map(a => a.id) });
+  flash("선택한 " + sel.length + "대에서 수집 중…");
+  setTimeout(load, 2000); setTimeout(load, 6000);
+});
+$("selScanBtn").addEventListener("click", async () => {
+  const sel = selectedAgents().filter(a => a.enabled);
+  if (!sel.length) return flash("선택한 서버 중 사용 중인 서버가 없습니다.", true);
+  if (!confirm("선택한 서버 " + sel.length + "대에 스캔 시작을 요청할까요?\n" + sel.map(agentLabel).join(", "))) return;
+  await scanRequest(sel.map(a => a.id));
+});
+$("selDelBtn").addEventListener("click", async () => {
+  const sel = selectedAgents();
+  const auto = sel.filter(a => a.auto).length;
+  if (!confirm("선택한 서버 " + sel.length + "대를 목록에서 삭제할까요?\n" + sel.map(agentLabel).join(", ") +
+    "\n\n(에이전트 서버와 그 스캔 결과는 건드리지 않습니다)" +
+    (auto ? "\n자동 등록된 서버는 에이전트가 켜져 있으면 다음 신호 때 다시 나타납니다. 다시 안 나오게 하려면 그 서버에서 에이전트를 제거하세요." : ""))) return;
+  try {
+    const r = await api("/api/agents/delete", "POST", { ids: sel.map(a => a.id) });
+    flash(r.deleted + "대를 삭제했습니다.");
+  } catch (e) { flash("삭제 실패: " + e.message, true); }
+  S.selected.clear();
+  await load();
+});
+async function scanRequest(ids) {
+  try {
+    const r = await api("/api/scan-all", "POST", ids ? { ids } : {});
+    const ok = r.results.filter(x => x.ok).length;
+    const fails = r.results.filter(x => !x.ok).map(x => x.name + ": " + (x.detail || "실패"));
+    flash("스캔 시작 " + ok + "대" + (fails.length ? " · 실패 " + fails.join(" / ") : ""), fails.length > 0);
+  } catch (e) { flash(e.message, true); }
+  setTimeout(load, 1500);
 }
 async function agentScan(a, cancel) {
   try {
@@ -640,13 +705,7 @@ $("scanAllBtn").addEventListener("click", async () => {
   const n = S.agents.filter(a => a.enabled).length;
   if (!n) return flash("등록된 서버가 없습니다.", true);
   if (!confirm("사용 중인 서버 " + n + "대 모두에 스캔 시작을 요청할까요?\n(각 서버의 스캔 대상 전체를 순서대로 스캔합니다)")) return;
-  try {
-    const r = await api("/api/scan-all", "POST", {});
-    const ok = r.results.filter(x => x.ok).length;
-    const fails = r.results.filter(x => !x.ok).map(x => x.name + ": " + (x.detail || "실패"));
-    flash("스캔 시작 " + ok + "대" + (fails.length ? " · 실패 " + fails.join(" / ") : ""), fails.length > 0);
-  } catch (e) { flash(e.message, true); }
-  setTimeout(load, 1500);
+  await scanRequest(null);
 });
 $("unitSel").addEventListener("change", () => { S.unit = $("unitSel").value; renderAll(); });
 
@@ -678,6 +737,8 @@ async function load() {
   try {
     const data = await api("/api/agents");
     S.agents = data.agents;
+    const ids = new Set(S.agents.map(a => a.id));
+    S.selected = new Set([...S.selected].filter(id => ids.has(id)));
     S.allowControl = data.allow_control;
     S.interval = data.poll_interval_sec;
     S.lastLoad = Date.now() / 1000;

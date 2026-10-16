@@ -319,11 +319,21 @@ def api_delete_agent(aid):
     return 200, {"deleted": True}
 
 
-def api_scan_all():
-    """사용 중인 모든 에이전트에 스캔 시작 요청 (각 에이전트의 포함 대상 전체)."""
+def _ids(body):
+    """요청의 ids 목록 (없으면 None = 전체). 숫자가 아니면 ValueError."""
+    ids = body.get("ids")
+    if ids is None:
+        return None
+    if not isinstance(ids, list):
+        raise ValueError
+    return set(int(i) for i in ids)
+
+
+def api_scan_all(ids=None):
+    """사용 중인 에이전트에 스캔 시작 요청 (각 에이전트의 포함 대상 전체). ids를 주면 그 에이전트만."""
     if not CFG["allow_agent_control"]:
         return 403, {"detail": "마스터에서 에이전트 제어가 꺼져 있습니다 (config.json allow_agent_control)."}
-    agents = [a for a in mdb.list_agents(DB_PATH) if a["enabled"]]
+    agents = [a for a in mdb.list_agents(DB_PATH) if a["enabled"] and (ids is None or a["id"] in ids)]
 
     def start(a):
         try:
@@ -465,12 +475,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(payload, status)
         if route == "/api/poll":
             try:
-                POLLER.force(int(body["id"]) if body.get("id") is not None else None)
+                ids = _ids(body)
+                if body.get("id") is not None:
+                    ids = {int(body["id"])}
             except (TypeError, ValueError):
                 return self._send_json({"detail": "id가 올바르지 않습니다."}, 400)
+            for aid in (ids if ids is not None else [None]):
+                POLLER.force(aid)
             return self._send_json({"polling": True})
+        if route == "/api/agents/delete":
+            try:
+                ids = _ids(body) or set()
+            except (TypeError, ValueError):
+                return self._send_json({"detail": "ids가 올바르지 않습니다."}, 400)
+            for aid in ids:
+                mdb.delete_agent(DB_PATH, aid)
+            return self._send_json({"deleted": len(ids)})
         if route == "/api/scan-all":
-            status, payload = api_scan_all()
+            try:
+                ids = _ids(body)
+            except (TypeError, ValueError):
+                return self._send_json({"detail": "ids가 올바르지 않습니다."}, 400)
+            status, payload = api_scan_all(ids)
             return self._send_json(payload, status)
         m = _AGENT_API.match(route)
         if m:

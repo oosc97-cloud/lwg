@@ -98,16 +98,18 @@ EOF
 }
 
 set_config_port() {   # $1 = config.json, $2 = 포트, $3 = 마스터 주소(비우면 기존 값 유지). 다른 설정은 그대로 둠
-  "$PY" - "$1" "$2" "${3:-}" <<'EOF' || die "config.json에 포트를 쓰지 못했습니다."
+  "$PY" - "$1" "$2" "${3:-}" "$EDITION" <<'EOF' || die "config.json에 포트를 쓰지 못했습니다."
 import json, sys
 from collections import OrderedDict
-path, port, master = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+path, port, master, edition = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
 with open(path, encoding="utf-8") as f:
     cfg = json.load(f, object_pairs_hook=OrderedDict)
 cfg["port"] = port
 cfg.move_to_end("port", last=False)
 if master:
     cfg["master"] = master
+if edition == "master":  # 마스터 연동판: 화면은 마스터에서만, 에이전트는 API만
+    cfg["web_ui"] = False
 # 이전 버전 설정 정리: 제외 목록 방식 → 포함 목록(scan_include) 방식
 for k in ("linux_excludes", "windows_excludes", "exclude_names"):
     if cfg.pop(k, None) is not None:
@@ -324,8 +326,13 @@ EOF
   check_noatime
   [ "$ok" = 1 ] && check_master
   if [ "$ok" = 1 ]; then
-    info "설치 완료 ($( [ "$upgrade" = 1 ] && echo 업그레이드 || echo 신규 설치)). 브라우저에서 접속:"
-    host_urls "$PORT"
+    if [ "$EDITION" = master ]; then
+      info "설치 완료 ($( [ "$upgrade" = 1 ] && echo 업그레이드 || echo 신규 설치)). 포트 $PORT 에서 마스터 요청만 받습니다 (웹 화면 없음)."
+      echo "  화면은 마스터에서 확인: $(config_master "$PREFIX/config.json")"
+    else
+      info "설치 완료 ($( [ "$upgrade" = 1 ] && echo 업그레이드 || echo 신규 설치)). 브라우저에서 접속:"
+      host_urls "$PORT"
+    fi
     echo
     echo "  상태: systemctl status $SERVICE   로그: journalctl -u $SERVICE"
     echo "  재시작: systemctl restart $SERVICE   제거: sudo bash $0 --uninstall"

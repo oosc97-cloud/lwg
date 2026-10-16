@@ -15,6 +15,7 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/fs-master/static" "$REPO/dist"
 cp -a server.py master_db.py config.json README.md "$STAGE/fs-master/"
 cp -a static/. "$STAGE/fs-master/static/"
+cp -a ../app/static/index.html "$STAGE/fs-master/static/agent.html"   # 서버별 상세 화면 (에이전트 대시보드)
 echo "$VERSION" > "$STAGE/fs-master/VERSION"
 
 sed "s/@VERSION@/$VERSION/" installer/install-header.sh > "$OUT"

@@ -35,8 +35,8 @@ mkdir -p "$STAGE/fs-agent/app"
 ( cd app && find . -name '__pycache__' -prune -o -type f ! -name '*.pyc' -print | while read -r f; do
     mkdir -p "$STAGE/fs-agent/app/$(dirname "$f")"; cp -a "$f" "$STAGE/fs-agent/app/$f"; done )
 echo "$VERSION" > "$STAGE/fs-agent/VERSION"
-# 마스터 연동판은 기본 포트만 다르게 (나머지 설정은 동일)
-[ "$EDITION" = master ] && sed -i "s/\"port\": 15891/\"port\": $PORT/" "$STAGE/fs-agent/config.json"
+# 마스터 연동판은 기본 포트가 다르고 웹 화면을 끔 (화면은 마스터에서만)
+[ "$EDITION" = master ] && sed -i "s/\"port\": 15891,/\"port\": $PORT,\n  \"web_ui\": false,/" "$STAGE/fs-agent/config.json"
 
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SERVICE@/$NAME/" -e "s#@PREFIX@#/opt/$NAME#g" -e "s/@PORT@/$PORT/g" \
     -e "s/@EDITION@/$EDITION/" -e "s/@INSTALLER@/$NAME-install.sh/g" -e "s/@MASTER_NOTE@/$NOTE/" \

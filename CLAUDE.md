@@ -45,7 +45,10 @@ rebuild it for master work. Agents self-register: `app/master_link.py` runs only
 matches by key (IP changes update the row). Agent exposes `GET /api/master` (link status,
 used by the installer). The installer header is shared and templated (`@SERVICE@ @PREFIX@
 @PORT@ @EDITION@ @INSTALLER@`); `--master-edition` builds `fs-agent-m` (15892, `--master`
-required on first install) and both editions accept `--master`.
+required on first install, sets `"web_ui": false` so `/` and `/static/` answer with a pointer
+to the master; API unchanged) and both editions accept `--master`. The master serves drill-down
+from its own copy of the agent dashboard (`static/agent.html`, copied from
+`app/static/index.html` at master build time; `../app/static/index.html` when run from the repo).
 `master/server.py` (port 15900, own `config.json`, `data/fs_master.db`, systemd
 `fs-master`, `/opt/fs-master`) pulls each agent's existing API (`scan/status`, `summary`,
 `roots`, `tree`, `cleanup-candidates`) every `poll_interval_sec` (scanning agents every

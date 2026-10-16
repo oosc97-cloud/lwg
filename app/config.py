@@ -32,6 +32,8 @@ DEFAULTS = {
     # 마스터 서버(fs-master) 주소. 비우면 단독 실행. 예: "http://10.0.0.9:15900"
     "master": "",
     "master_heartbeat_sec": 300,  # 마스터에 등록 신호를 보내는 간격
+    # 웹 화면 제공 여부. 마스터 연동판은 false: 화면은 마스터에서만 보고 에이전트는 API만 응답
+    "web_ui": True,
 }
 
 NESTED_KEYS = ("scan_include", "score", "grades", "cleanup", "history")

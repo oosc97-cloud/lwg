@@ -345,15 +345,23 @@ def api_scan_all():
 
 # ---------- 에이전트 화면 중계 (/agent/<id>/...) ----------
 
+# 설치판: static/agent.html (빌드 때 app/static/index.html 복사), 저장소에서 직접 실행: ../app/static/index.html
+AGENT_PAGE_FILES = (STATIC_DIR / "agent.html", BASE_DIR.parent / "app" / "static" / "index.html")
 _API_PATH_RE = re.compile(r"""(["'`])/api/""")
 
 
 def agent_page(agent):
-    """에이전트 대시보드 HTML을 받아 API 경로를 /agent/<id>/api/ 로 바꾸고 상단에 돌아가기 줄을 붙인다."""
-    status, data, _ = agent_request(agent["url"], "/")
-    if status != 200:
-        raise AgentError("에이전트 화면을 받지 못했습니다 (HTTP %d)" % status)
-    page = data.decode("utf-8")
+    """에이전트 대시보드 HTML의 API 경로를 /agent/<id>/api/ 로 바꾸고 상단에 돌아가기 줄을 붙인다."""
+    page = None
+    for p in AGENT_PAGE_FILES:  # 마스터가 가진 에이전트 화면 (마스터 연동 에이전트는 화면을 제공하지 않음)
+        if p.is_file():
+            page = p.read_text(encoding="utf-8")
+            break
+    if page is None:
+        status, data, _ = agent_request(agent["url"], "/")
+        if status != 200:
+            raise AgentError("에이전트 화면을 받지 못했습니다 (HTTP %d)" % status)
+        page = data.decode("utf-8")
     prefix = "/agent/%d/api/" % agent["id"]
     page = _API_PATH_RE.sub(lambda m: m.group(1) + prefix, page)
     label = agent["name"] or agent["hostname"] or agent["url"]

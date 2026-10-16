@@ -85,6 +85,17 @@ sudo bash fs-agent-install-<버전>.sh --uninstall --purge   # 전부 삭제
 
 설치 후 관리: `systemctl start|status|restart|stop fs-agent`, 로그는 `journalctl -u fs-agent`.
 
+## 여러 서버 통합 보기 (마스터, 선택)
+
+여러 서버에 에이전트를 설치했다면, 마스터 서버 한 대에 **fs-master**를 설치해 모든 서버를 한 화면에서 볼 수 있습니다.
+에이전트는 위 설치 파일 그대로 쓰고 바꿀 것이 없습니다. 마스터가 각 에이전트(15891)를 주기적으로 읽어 옵니다.
+
+```bash
+sudo bash release/fs-master-install.sh --agent 10.0.0.5 --agent 10.0.0.6   # /opt/fs-master, 포트 15900
+```
+
+자세한 내용은 [master/README.md](master/README.md)를 보세요.
+
 ## 폐쇄망 배포
 
 인터넷이 되는 곳에서 소스 아카이브를 만들어 반입:
@@ -153,4 +164,4 @@ cd /opt/fs-agent && ./restart.sh
 
 - LLM(Claude API) 연동: 스캔 결과 요약·정리 제안 자연어 리포트
 - 스케줄 스캔(cron) 및 스냅샷 간 변화 추적 (`scan_history` 테이블에 스캔별 집계를 이미 보관)
-- 다중 서버 중앙 수집형 구성
+- 다중 서버 중앙 수집: 마스터(`master/`)로 1차 구현. 남은 것은 서버 간 추이 비교 등

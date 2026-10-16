@@ -6,3 +6,5 @@ venv/
 fs-agent.pid
 fs-agent.log
 dist/
+fs-master.pid
+fs-master.log

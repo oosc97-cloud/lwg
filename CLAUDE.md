@@ -28,9 +28,23 @@ python3 server.py                 # serve dashboard on 0.0.0.0:15891 (config.jso
 ./build-installer.sh [--release]    # dist/fs-agent-install-<ver>.sh: self-extracting installer for target servers;
                                   # --release also writes release/fs-agent-install.sh (committed so deploy.sh drops it on the test server)
                                   # (installer/install-header.sh + tar.gz of runtime files only; systemd unit not enabled at boot, keeps data/ & config.json)
+master/build-installer.sh [--release] # dist/fs-master-install-<ver>.sh; --release also writes release/fs-master-install.sh
+cd master && ./restart.sh / ./stop.sh  # run the master (port 15900) from the repo
 ```
 
 No test suite or linter is configured yet.
+
+## Master edition (`master/`)
+
+Separate component; the agent and `release/fs-agent-install.sh` stay untouched and need no
+change. `master/server.py` (port 15900, own `config.json`, `data/fs_master.db`, systemd
+`fs-master`, `/opt/fs-master`) pulls each registered agent's existing API
+(`scan/status`, `summary`, `roots`, `tree`, `cleanup-candidates`) every `poll_interval_sec`
+(scan-in-progress agents every `scan_poll_sec`, status only) and keeps the last result on
+failure. `/agent/<id>/` proxies the agent's own dashboard by rewriting its `"/api/` fetch
+paths to `/agent/<id>/api/` — keep agent frontend API calls as quoted absolute `/api/...`
+strings so this keeps working. POST pass-through is limited to scan, scan/cancel, reset
+(`allow_agent_control`). Agents are registered in the master UI or `--agent` at install.
 
 ## Architecture
 

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>파일시스템 Master</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f3f3f1;
+    --surface-1: #fcfcfb;
+    --surface-2: #f0f0ed;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --border: rgba(11,11,11,0.12);
+    --accent: #2a78d6;
+    --hover: rgba(11,11,11,0.04);
+    --ok: #15803d;
+    --bad: #c2410c;
+    --warn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface-1: #1a1a19;
+      --surface-2: #232321;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --border: rgba(255,255,255,0.12);
+      --accent: #3987e5;
+      --hover: rgba(255,255,255,0.05);
+      --ok: #4ade80;
+      --bad: #fb923c;
+      --warn: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; font-size: 13px;
+  }
+  .app { display: flex; flex-direction: column; min-height: 100vh; padding: 12px 14px 14px; gap: 10px; }
+  .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  .spacer { flex: 1; }
+  .tool { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; }
+  #pollInfo, #actionMsg { color: var(--text-secondary); font-size: 12px; }
+  select, input[type=text], textarea {
+    padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 12px; font-family: inherit;
+  }
+  button { font-family: inherit; }
+  button.primary {
+    padding: 6px 14px; border: none; border-radius: 6px;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary, button.mini {
+    padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-1); color: var(--text-primary); font-size: 12px; cursor: pointer;
+  }
+  button.mini { padding: 2px 8px; font-size: 11px; }
+  button:disabled { opacity: .5; cursor: default; }
+  a { color: var(--accent); }
+
+  .kpis { display: flex; gap: 8px; flex-wrap: wrap; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; min-width: 130px; }
+  .kpi .label { color: var(--text-muted); font-size: 11px; }
+  .kpi .value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kpi .note { color: var(--text-muted); font-size: 11px; }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .card h2 { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 0 0 8px; }
+  .stack { display: flex; height: 18px; border-radius: 3px; overflow: hidden; background: var(--grid); }
+  .stack > div { height: 100%; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--text-secondary); }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; flex: 1; min-height: 420px; overflow: hidden; }
+  .tabs { display: flex; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--grid); background: var(--surface-2); overflow-x: auto; flex: none; }
+  .tab { padding: 8px 12px; border: none; background: none; color: var(--text-secondary); font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab.active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 600; }
+  .pane-body { flex: 1; overflow: auto; }
+  .tabpane { padding: 10px 12px; }
+  .tabtools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; color: var(--text-secondary); font-size: 12px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 11px; position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text-primary); }
+  th .arrow { font-size: 9px; margin-left: 3px; }
+  tbody tr:hover { background: var(--hover); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.path { max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+  td.err { color: var(--bad); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub { color: var(--text-muted); font-size: 11px; }
+  .trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot.ok { background: var(--ok); } .dot.error { background: var(--bad); } .dot.unknown { background: var(--text-muted); }
+  .dot.scan { background: var(--warn); }
+  .chip { display: inline-flex; align-items: center; }
+  .chip .dot { margin-right: 5px; }
+  .barwrap { display: flex; align-items: center; gap: 6px; min-width: 120px; }
+  .pbar { flex: 1; height: 10px; background: var(--grid); border-radius: 2px; overflow: hidden; min-width: 40px; }
+  .pbar > div { height: 100%; background: var(--accent); }
+  .barwrap span { min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+  .mstack { display: flex; width: 110px; height: 10px; border-radius: 2px; overflow: hidden; background: var(--grid); }
+  .mstack > div { height: 100%; }
+  .actions { display: flex; gap: 4px; }
+  .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+  .muted { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+  .form { display: grid; grid-template-columns: 1fr; gap: 8px; max-width: 760px; margin-bottom: 14px; }
+  .form .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .form input[type=text] { min-width: 220px; }
+  textarea { width: 100%; min-height: 90px; font-family: ui-monospace, Consolas, monospace; }
+  .help { color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+  .msg-bad { color: var(--bad); } .msg-ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <h1>파일시스템 Master</h1>
+    <span class="sub">여러 서버의 fs-agent 통합 화면</span>
+    <button class="primary" id="pollBtn" title="등록된 모든 에이전트에서 지금 바로 수집합니다">지금 수집</button>
+    <button class="secondary" id="scanAllBtn" title="사용 중인 모든 에이전트에 스캔 시작을 요청합니다">전체 스캔 시작</button>
+    <span id="actionMsg"></span>
+    <span class="spacer"></span>
+    <span id="pollInfo"></span>
+    <label class="tool">단위
+      <select id="unitSel">
+        <option value="auto">자동</option>
+        <option value="MB">MB</option>
+        <option value="GB" selected>GB</option>
+        <option value="TB">TB</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">서버</div><div class="value" id="kServers">–</div><div class="note" id="kServersNote"></div></div>
+    <div class="kpi"><div class="label">총 용량</div><div class="value" id="kSize">–</div></div>
+    <div class="kpi"><div class="label">총 파일 수</div><div class="value" id="kFiles">–</div></div>
+    <div class="kpi"><div class="label">평균 가치점수</div><div class="value" id="kScore">–</div><div class="note">파일 수 가중 평균</div></div>
+    <div class="kpi"><div class="label">정리 후보 용량</div><div class="value" id="kCleanup">–</div><div class="note" id="kCleanupNote"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>전체 서버 등급별 용량</h2>
+    <div class="stack" id="gradeStack"></div>
+    <div class="legend" id="gradeLegend"></div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs">
+      <button class="tab active" data-tab="servers">서버</button>
+      <button class="tab" data-tab="roots">스캔 대상 폴더</button>
+      <button class="tab" data-tab="cleanup">정리 후보</button>
+      <button class="tab" data-tab="manage">서버 관리</button>
+    </div>
+    <div class="pane-body">
+      <div class="tabpane" id="tab-servers">
+        <div class="tabtools">서버 이름을 누르면 그 서버의 상세 화면(폴더 트리·차트·검색)이 열립니다. 열 머리글을 누르면 정렬합니다.</div>
+        <table>
+          <thead><tr id="srvHead"></tr></thead>
+          <tbody id="srvRows"></tbody>
+        </table>
+        <div class="empty" id="srvEmpty" hidden>등록된 서버가 없습니다. <a href="#" id="goManage">서버 관리</a>에서 에이전트 주소를 추가하세요.</div>
+      </div>
+      <div class="tabpane" id="tab-roots" hidden>
+        <div class="tabtools">모든 서버의 스캔 대상(최상위) 폴더 · 용량 큰 순</div>
+        <table>
+          <thead><tr><th>서버</th><th>폴더</th><th class="num">용량</th><th>비중</th><th class="num">할당 용량</th><th class="num">파일 수</th><th class="num">폴더 수</th><th class="num">평균 점수</th><th class="num">정리 후보</th><th>최근 수정</th></tr></thead>
+          <tbody id="rootRows"></tbody>
+        </table>
+        <div class="empty" id="rootEmpty" hidden>수집된 폴더가 없습니다. 에이전트에서 스캔을 먼저 실행하세요.</div>
+      </div>
+      <div class="tabpane" id="tab-cleanup" hidden>
+        <div class="tabtools">
+          <select id="cleanupAgent"><option value="">서버: 전체</option></select>
+          <span id="cleanupNote"></span>
+        </div>
+        <table>
+          <thead><tr><th>서버</th><th>경로</th><th class="num">용량</th><th>최근 접근</th><th>최근 수정</th><th class="num">점수</th><th>등급</th></tr></thead>
+          <tbody id="cleanupRows"></tbody>
+        </table>
+        <div class="empty" id="cleanupEmpty" hidden>정리 후보가 없습니다.</div>
+      </div>
+      <div class="tabpane" id="tab-manage" hidden>
+        <div class="form">
+          <div class="row">
+            <input type="text" id="addUrl" placeholder="에이전트 주소 (예: 10.0.0.5 또는 10.0.0.5:15891)">
+            <input type="text" id="addName" placeholder="표시 이름 (선택)">
+            <button class="primary" id="addBtn">추가</button>
+            <span id="addMsg"></span>
+          </div>
+          <details>
+            <summary class="help">여러 대 한꺼번에 추가</summary>
+            <div class="help">한 줄에 하나씩 "주소 [이름]" 형식으로 적으세요. 포트를 생략하면 15891을 씁니다.</div>
+            <textarea id="bulkText" placeholder="10.0.0.5&#10;10.0.0.6:15891 DB서버&#10;http://nas01:15891 NAS"></textarea>
+            <div class="row"><button class="secondary" id="bulkBtn">모두 추가</button><span id="bulkMsg"></span></div>
+          </details>
+          <div class="help">
+            마스터가 각 에이전트의 화면 API를 주기적으로 읽어 옵니다. 에이전트 쪽은 설정 변경이 필요 없고,
+            마스터 서버에서 에이전트 포트(기본 15891)로 접속만 되면 됩니다.
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>상태</th><th>이름</th><th>주소</th><th>호스트명 / IP</th><th>마지막 성공</th><th>수집</th><th>오류</th><th></th></tr></thead>
+          <tbody id="mgRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const GRADES = ["hot", "warm", "cold", "stale"];
+const GRADE_COLOR = { stale: "#86b6ef", cold: "#5598e7", warm: "#2a78d6", hot: "#184f95" };
+const GRADE_LABEL = { hot: "자주 사용", warm: "가끔 사용", cold: "거의 안 씀", stale: "장기 미사용" };
+
+const S = { unit: "GB", tab: "servers", agents: [], allowControl: true, interval: 300,
+            sort: { key: "size", dir: -1 }, cleanup: null, lastLoad: 0 };
+
+/* ---------- 포맷 ---------- */
+function fmtBytes(n) {
+  if (n == null) return "–";
+  const u = ["B", "KB", "MB", "GB", "TB", "PB"];
+  if (S.unit !== "auto") {
+    const v = n / Math.pow(1024, u.indexOf(S.unit));
+    return v.toLocaleString("ko-KR", { maximumFractionDigits: v >= 100 ? 0 : v >= 1 ? 1 : 2 }) + " " + S.unit;
+  }
+  if (n === 0) return "0 B";
+  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1);
+  const v = n / Math.pow(1024, i);
+  return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i];
+}
+const fmtNum = n => (n == null ? "–" : n.toLocaleString("ko-KR"));
+const pad2 = n => String(n).padStart(2, "0");
+function fmtDate(ts) {
+  if (!ts) return "–";
+  const d = new Date(ts * 1000);
+  return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
+}
+function fmtDateTime(ts) {
+  if (!ts) return "–";
+  const d = new Date(ts * 1000);
+  return fmtDate(ts) + " " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+function fmtAgo(ts) {
+  if (!ts) return "–";
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 60) return Math.floor(s) + "초 전";
+  if (s < 3600) return Math.floor(s / 60) + "분 전";
+  if (s < 86400) return Math.floor(s / 3600) + "시간 전";
+  return Math.floor(s / 86400) + "일 전";
+}
+
+/* ---------- DOM 헬퍼 (동적 문자열은 textContent만) ---------- */
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function td(text, cls, title) {
+  const c = el("td", cls, text);
+  if (title) c.title = title;
+  return c;
+}
+function barCell(v, max, label) {
+  const c = el("td");
+  const w = el("div", "barwrap");
+  const b = el("div", "pbar"); const f = el("div");
+  f.style.width = (max > 0 ? Math.min(100, v / max * 100) : 0) + "%";
+  b.appendChild(f);
+  w.append(b, el("span", null, label));
+  c.appendChild(w);
+  return c;
+}
+function gradeStack(grades, cls) {
+  const box = el("div", cls);
+  const total = GRADES.reduce((s, g) => s + ((grades[g] || {}).size || 0), 0);
+  const tip = [];
+  GRADES.forEach(g => {
+    const v = (grades[g] || {}).size || 0;
+    if (!total || !v) return;
+    const seg = el("div");
+    seg.style.width = (v / total * 100) + "%";
+    seg.style.background = GRADE_COLOR[g];
+    box.appendChild(seg);
+    tip.push(GRADE_LABEL[g] + " " + fmtBytes(v) + " (" + (v / total * 100).toFixed(1) + "%)");
+  });
+  box.title = tip.join("\n");
+  return box;
+}
+function gradeChip(g) {
+  const c = el("span", "chip");
+  const d = el("span", "dot"); d.style.background = GRADE_COLOR[g];
+  c.append(d, document.createTextNode(GRADE_LABEL[g] || g));
+  return c;
+}
+async function api(url, method, body) {
+  const opt = { method: method || "GET", cache: "no-store" };
+  if (body !== undefined) { opt.headers = { "Content-Type": "application/json" }; opt.body = JSON.stringify(body); }
+  const r = await fetch(url, opt);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
+  return data;
+}
+function agentLabel(a) { return a.name || a.hostname || a.url; }
+function isScanning(a) { return a.scan && (a.scan.status === "running" || a.scan.status === "cancelling"); }
+
+/* ---------- 집계 ---------- */
+function totals() {
+  const t = { size: 0, files: 0, scoreSum: 0, cleanup: 0, ok: 0, bad: 0, scanning: 0, grades: {}, cleanupGrades: null, minMb: 0 };
+  GRADES.forEach(g => (t.grades[g] = { size: 0, count: 0 }));
+  S.agents.forEach(a => {
+    if (!a.enabled) return;
+    if (a.status === "ok") t.ok++; else if (a.status === "error") t.bad++;
+    if (isScanning(a)) t.scanning++;
+    const s = a.summary;
+    if (!s) return;
+    t.size += s.total_size; t.files += s.file_count; t.scoreSum += s.avg_score * s.file_count;
+    t.cleanup += s.cleanup.size;
+    if (!t.cleanupGrades) { t.cleanupGrades = s.cleanup.grades; t.minMb = s.cleanup.min_size_mb; }
+    GRADES.forEach(g => { const x = s.grades[g] || {}; t.grades[g].size += x.size || 0; t.grades[g].count += x.count || 0; });
+  });
+  return t;
+}
+
+function renderKpis() {
+  const t = totals();
+  const enabled = S.agents.filter(a => a.enabled).length;
+  $("kServers").textContent = enabled ? t.ok + " / " + enabled : "0";
+  const notes = ["정상 / 사용 중"];
+  if (t.bad) notes.push("연결 실패 " + t.bad);
+  if (t.scanning) notes.push("스캔 중 " + t.scanning);
+  $("kServersNote").textContent = notes.join(" · ");
+  $("kSize").textContent = fmtBytes(t.size);
+  $("kFiles").textContent = fmtNum(t.files);
+  $("kScore").textContent = t.files ? (t.scoreSum / t.files).toFixed(1) : "–";
+  $("kCleanup").textContent = fmtBytes(t.cleanup);
+  $("kCleanupNote").textContent = t.cleanupGrades
+    ? t.cleanupGrades.map(g => GRADE_LABEL[g]).join(" + ") + (t.minMb > 0 ? " · " + t.minMb + "MB 이상" : "") : "";
+  const stack = $("gradeStack");
+  stack.replaceWith(Object.assign(gradeStack(t.grades, "stack"), { id: "gradeStack" }));
+  const lg = $("gradeLegend");
+  lg.textContent = "";
+  const total = GRADES.reduce((s, g) => s + t.grades[g].size, 0);
+  GRADES.forEach(g => {
+    const it = el("span");
+    const sw = el("span", "swatch"); sw.style.background = GRADE_COLOR[g];
+    it.append(sw, document.createTextNode(GRADE_LABEL[g] + " " + fmtBytes(t.grades[g].size) +
+      (total ? " (" + (t.grades[g].size / total * 100).toFixed(1) + "%)" : "") + " · " + fmtNum(t.grades[g].count) + "개"));
+    lg.appendChild(it);
+  });
+}
+
+/* ---------- 서버 표 ---------- */
+const SRV_COLS = [
+  { key: "status", label: "상태" },
+  { key: "name", label: "서버" },
+  { key: "size", label: "총 용량", num: true },
+  { key: "files", label: "파일 수", num: true },
+  { key: "score", label: "평균 점수", num: true },
+  { key: "grades", label: "등급 비중", nosort: true },
+  { key: "cleanup", label: "정리 후보", num: true },
+  { key: "scan", label: "스캔" },
+  { key: "polled", label: "마지막 수집" },
+  { key: "act", label: "", nosort: true },
+];
+function srvValue(a, key) {
+  const s = a.summary;
+  switch (key) {
+    case "status": return (a.enabled ? 0 : 3) + (isScanning(a) ? 0.5 : 0) + (a.status === "ok" ? 0 : a.status === "error" ? 2 : 1);
+    case "name": return agentLabel(a).toLowerCase();
+    case "size": return s ? s.total_size : -1;
+    case "files": return s ? s.file_count : -1;
+    case "score": return s ? s.avg_score : -1;
+    case "cleanup": return s ? s.cleanup.size : -1;
+    case "scan": return a.scan && a.scan.finished_at || 0;
+    case "polled": return a.last_ok_at || 0;
+  }
+  return 0;
+}
+function renderServerHead() {
+  const tr = $("srvHead");
+  tr.textContent = "";
+  SRV_COLS.forEach(c => {
+    const th = el("th", (c.num ? "num " : "") + (c.nosort ? "" : "sortable"), c.label);
+    if (!c.nosort) {
+      if (S.sort.key === c.key) th.appendChild(el("span", "arrow", S.sort.dir < 0 ? "▼" : "▲"));
+      th.addEventListener("click", () => {
+        S.sort = S.sort.key === c.key ? { key: c.key, dir: -S.sort.dir } : { key: c.key, dir: c.num ? -1 : 1 };
+        renderServers();
+      });
+    }
+    tr.appendChild(th);
+  });
+}
+function statusCell(a) {
+  const c = el("td");
+  let cls = a.status, text = { ok: "정상", error: "연결 실패", unknown: "확인 중" }[a.status] || a.status;
+  if (!a.enabled) { cls = "unknown"; text = "사용 안 함"; }
+  else if (isScanning(a)) { cls = "scan"; text = a.scan.status === "cancelling" ? "취소 중" : "스캔 중"; }
+  c.append(el("span", "dot " + cls), document.createTextNode(text));
+  if (a.status === "error" && a.error) c.title = a.error;
+  return c;
+}
+function scanText(a) {
+  const st = a.scan;
+  if (!st) return ["–", ""];
+  if (isScanning(a)) return [(st.status === "cancelling" ? "취소 중 " : "진행 중 ") + fmtNum(st.file_count) + "개 · " + fmtBytes(st.total_size), st.root || ""];
+  if (st.status === "done") return [fmtDateTime(st.finished_at), "완료 · " + (st.root || "")];
+  if (st.status === "cancelled") return [fmtDateTime(st.finished_at), "취소됨 · " + (st.root || "")];
+  if (st.status === "error") return ["오류", st.error || ""];
+  return ["스캔 이력 없음", ""];
+}
+function renderServers() {
+  renderServerHead();
+  const tb = $("srvRows");
+  tb.textContent = "";
+  const list = S.agents.slice().sort((x, y) => {
+    const a = srvValue(x, S.sort.key), b = srvValue(y, S.sort.key);
+    return (a < b ? -1 : a > b ? 1 : 0) * S.sort.dir;
+  });
+  $("srvEmpty").hidden = list.length > 0;
+  const maxSize = Math.max(0, ...list.map(a => (a.summary ? a.summary.total_size : 0)));
+  list.forEach(a => {
+    const s = a.summary;
+    const tr = el("tr");
+    tr.appendChild(statusCell(a));
+    const name = el("td");
+    const link = el("a", null, agentLabel(a));
+    link.href = "/agent/" + a.id + "/";
+    link.title = "이 서버의 상세 화면 열기";
+    name.append(link, el("div", "sub", (a.hostname ? a.hostname + (a.ip ? " · " + a.ip : "") + " · " : "") + a.url));
+    tr.appendChild(name);
+    if (s) {
+      tr.appendChild(barCell(s.total_size, maxSize, fmtBytes(s.total_size)));
+      tr.appendChild(td(fmtNum(s.file_count), "num"));
+      tr.appendChild(td(s.avg_score.toFixed(1), "num"));
+      const g = el("td"); g.appendChild(gradeStack(s.grades, "mstack")); tr.appendChild(g);
+      tr.appendChild(td(fmtBytes(s.cleanup.size), "num"));
+    } else {
+      tr.appendChild(td("–", "num")); tr.appendChild(td("–", "num")); tr.appendChild(td("–", "num"));
+      tr.appendChild(td("")); tr.appendChild(td("–", "num"));
+    }
+    const [t1, t2] = scanText(a);
+    const sc = el("td"); const sub = el("div", "sub trunc", t2); sub.title = t2;
+    sc.append(document.createTextNode(t1), sub); tr.appendChild(sc);
+    const pc = el("td");
+    pc.append(document.createTextNode(fmtAgo(a.last_ok_at)));
+    if (a.status === "error") { const e = el("div", "sub trunc msg-bad", "실패: " + a.error); e.title = a.error; pc.appendChild(e); }
+    tr.appendChild(pc);
+    const act = el("td"); const box = el("div", "actions");
+    const open = el("button", "mini", "열기");
+    open.addEventListener("click", () => { location.href = "/agent/" + a.id + "/"; });
+    box.appendChild(open);
+    if (S.allowControl && a.enabled) {
+      const scanning = isScanning(a);
+      const b = el("button", "mini", scanning ? "스캔 취소" : "스캔");
+      b.disabled = a.status !== "ok" || (a.scan && a.scan.status === "cancelling");
+      b.addEventListener("click", () => agentScan(a, scanning));
+      box.appendChild(b);
+    }
+    const p = el("button", "mini", "수집");
+    p.title = "이 서버만 지금 수집";
+    p.addEventListener("click", async () => { await api("/api/agents/" + a.id + "/poll", "POST", {}); flash("수집 요청: " + agentLabel(a)); setTimeout(load, 1500); });
+    box.appendChild(p);
+    act.appendChild(box); tr.appendChild(act);
+    tb.appendChild(tr);
+  });
+}
+async function agentScan(a, cancel) {
+  try {
+    await api("/agent/" + a.id + "/api/" + (cancel ? "scan/cancel" : "scan"), "POST", cancel ? {} : { root: null });
+    flash((cancel ? "스캔 취소 요청: " : "스캔 시작: ") + agentLabel(a));
+  } catch (e) { flash("실패 (" + agentLabel(a) + "): " + e.message, true); }
+  setTimeout(load, 1500);
+}
+
+/* ---------- 스캔 대상 폴더 ---------- */
+function renderRoots() {
+  const rows = [];
+  S.agents.forEach(a => (a.tree || []).forEach(d => rows.push({ a, d })));
+  rows.sort((x, y) => y.d.size - x.d.size);
+  const total = rows.reduce((s, r) => s + r.d.size, 0);
+  const tb = $("rootRows");
+  tb.textContent = "";
+  $("rootEmpty").hidden = rows.length > 0;
+  rows.forEach(({ a, d }) => {
+    const tr = el("tr");
+    const n = el("td"); const l = el("a", null, agentLabel(a)); l.href = "/agent/" + a.id + "/"; n.appendChild(l);
+    tr.appendChild(n);
+    tr.appendChild(td(d.path, "path", d.path));
+    tr.appendChild(td(fmtBytes(d.size), "num"));
+    tr.appendChild(barCell(d.size, total, (total ? d.size / total * 100 : 0).toFixed(1) + "%"));
+    tr.appendChild(td(fmtBytes(d.alloc_size), "num"));
+    tr.appendChild(td(fmtNum(d.file_count), "num"));
+    tr.appendChild(td(fmtNum(d.dir_count), "num"));
+    tr.appendChild(td(d.avg_score.toFixed(1), "num"));
+    tr.appendChild(td(fmtBytes(d.cleanup_size), "num"));
+    tr.appendChild(td(fmtDate(d.last_mtime)));
+    tb.appendChild(tr);
+  });
+}
+
+/* ---------- 정리 후보 ---------- */
+async function renderCleanup() {
+  const sel = $("cleanupAgent");
+  const cur = sel.value;
+  sel.textContent = "";
+  sel.appendChild(Object.assign(el("option", null, "서버: 전체"), { value: "" }));
+  S.agents.forEach(a => sel.appendChild(Object.assign(el("option", null, agentLabel(a)), { value: String(a.id) })));
+  sel.value = cur;
+  const data = await api("/api/cleanup?limit=500" + (cur ? "&agent=" + cur : ""));
+  $("cleanupNote").textContent = "서버별 큰 순 상위 " + data.per_agent + "개를 모아 용량 큰 순으로 보여 줍니다 (최대 500개). 서버 전체 목록은 그 서버 상세 화면에서 확인하세요.";
+  const tb = $("cleanupRows");
+  tb.textContent = "";
+  $("cleanupEmpty").hidden = data.files.length > 0;
+  data.files.forEach(f => {
+    const tr = el("tr");
+    tr.appendChild(td(f.agent_name || f.hostname || ("#" + f.agent_id)));
+    tr.appendChild(td(f.path, "path", f.path));
+    tr.appendChild(td(fmtBytes(f.size), "num"));
+    tr.appendChild(td(fmtDate(f.atime)));
+    tr.appendChild(td(fmtDate(f.mtime)));
+    tr.appendChild(td(f.score.toFixed(1), "num"));
+    const g = el("td"); g.appendChild(gradeChip(f.grade)); tr.appendChild(g);
+    tb.appendChild(tr);
+  });
+}
+$("cleanupAgent").addEventListener("change", renderCleanup);
+
+/* ---------- 서버 관리 ---------- */
+function renderManage() {
+  const tb = $("mgRows");
+  tb.textContent = "";
+  if (!S.agents.length) {
+    const tr = el("tr"); const c = td("등록된 서버가 없습니다.", "empty"); c.colSpan = 8; tr.appendChild(c); tb.appendChild(tr);
+    return;
+  }
+  S.agents.forEach(a => {
+    const tr = el("tr");
+    tr.appendChild(statusCell(a));
+    tr.appendChild(td(a.name || "–"));
+    tr.appendChild(td(a.url));
+    tr.appendChild(td(a.hostname ? a.hostname + (a.ip ? " / " + a.ip : "") : "–"));
+    tr.appendChild(td(fmtDateTime(a.last_ok_at)));
+    tr.appendChild(td(a.enabled ? "사용" : "사용 안 함"));
+    tr.appendChild(td(a.status === "error" ? a.error : "", "err", a.error));
+    const act = el("td"); const box = el("div", "actions");
+    const ren = el("button", "mini", "이름 변경");
+    ren.addEventListener("click", async () => {
+      const v = prompt("표시 이름 (비우면 호스트명 표시)", a.name || "");
+      if (v === null) return;
+      await updateAgent(a, { name: v });
+    });
+    const addr = el("button", "mini", "주소 변경");
+    addr.addEventListener("click", async () => {
+      const v = prompt("에이전트 주소", a.url);
+      if (v === null || v.trim() === a.url) return;
+      await updateAgent(a, { url: v });
+    });
+    const en = el("button", "mini", a.enabled ? "사용 안 함" : "사용");
+    en.title = a.enabled ? "수집을 멈춥니다 (등록은 유지)" : "수집을 다시 시작합니다";
+    en.addEventListener("click", () => updateAgent(a, { enabled: !a.enabled }));
+    const del = el("button", "mini", "삭제");
+    del.addEventListener("click", async () => {
+      if (!confirm(agentLabel(a) + " 을(를) 목록에서 삭제할까요?\n(에이전트 서버와 그 스캔 결과는 건드리지 않습니다)")) return;
+      await api("/api/agents/" + a.id + "/delete", "POST", {});
+      await load();
+    });
+    box.append(ren, addr, en, del);
+    act.appendChild(box); tr.appendChild(act);
+    tb.appendChild(tr);
+  });
+}
+async function updateAgent(a, fields) {
+  try { await api("/api/agents/" + a.id + "/update", "POST", fields); }
+  catch (e) { alert("변경 실패: " + e.message); }
+  await load();
+  setTimeout(load, 2000);
+}
+function setMsg(id, text, bad) { const m = $(id); m.textContent = text; m.className = bad ? "msg-bad" : "msg-ok"; }
+$("addBtn").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/agents", "POST", { url: $("addUrl").value, name: $("addName").value });
+    setMsg("addMsg", "추가했습니다: " + r.url);
+    $("addUrl").value = ""; $("addName").value = "";
+  } catch (e) { setMsg("addMsg", e.message, true); }
+  await load();
+  setTimeout(load, 2500);
+});
+$("addUrl").addEventListener("keydown", e => { if (e.key === "Enter") $("addBtn").click(); });
+$("bulkBtn").addEventListener("click", async () => {
+  const lines = $("bulkText").value.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith("#"));
+  let ok = 0; const fails = [];
+  for (const line of lines) {
+    const m = line.match(/^(\S+)\s*(.*)$/);
+    try { await api("/api/agents", "POST", { url: m[1], name: m[2] }); ok++; }
+    catch (e) { fails.push(m[1] + ": " + e.message); }
+  }
+  setMsg("bulkMsg", ok + "대 추가" + (fails.length ? " · 실패 " + fails.length + "건 (" + fails.join(" / ") + ")" : ""), fails.length > 0);
+  if (!fails.length) $("bulkText").value = "";
+  await load();
+  setTimeout(load, 2500);
+});
+$("goManage").addEventListener("click", e => { e.preventDefault(); showTab("manage"); });
+
+/* ---------- 상단 동작 ---------- */
+let flashTimer = null;
+function flash(text, bad) {
+  setMsg("actionMsg", text, bad);
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { $("actionMsg").textContent = ""; }, 8000);
+}
+$("pollBtn").addEventListener("click", async () => {
+  await api("/api/poll", "POST", {});
+  flash("모든 서버에서 수집 중…");
+  setTimeout(load, 2000); setTimeout(load, 6000);
+});
+$("scanAllBtn").addEventListener("click", async () => {
+  const n = S.agents.filter(a => a.enabled).length;
+  if (!n) return flash("등록된 서버가 없습니다.", true);
+  if (!confirm("사용 중인 서버 " + n + "대 모두에 스캔 시작을 요청할까요?\n(각 서버의 스캔 대상 전체를 순서대로 스캔합니다)")) return;
+  try {
+    const r = await api("/api/scan-all", "POST", {});
+    const ok = r.results.filter(x => x.ok).length;
+    const fails = r.results.filter(x => !x.ok).map(x => x.name + ": " + (x.detail || "실패"));
+    flash("스캔 시작 " + ok + "대" + (fails.length ? " · 실패 " + fails.join(" / ") : ""), fails.length > 0);
+  } catch (e) { flash(e.message, true); }
+  setTimeout(load, 1500);
+});
+$("unitSel").addEventListener("change", () => { S.unit = $("unitSel").value; renderAll(); });
+
+/* ---------- 탭 ---------- */
+function showTab(name) {
+  S.tab = name;
+  document.querySelectorAll(".tab").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tabpane").forEach(p => (p.hidden = p.id !== "tab-" + name));
+  renderTab();
+}
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+function renderTab() {
+  if (S.tab === "servers") renderServers();
+  else if (S.tab === "roots") renderRoots();
+  else if (S.tab === "cleanup") renderCleanup().catch(e => flash(e.message, true));
+  else if (S.tab === "manage") renderManage();
+}
+function renderAll() {
+  renderKpis();
+  renderTab();
+  $("scanAllBtn").hidden = !S.allowControl;
+  const mins = Math.round(S.interval / 60);
+  $("pollInfo").textContent = "자동 수집 " + (mins >= 1 ? mins + "분" : S.interval + "초") + " 간격 · 화면 갱신 " + fmtDateTime(S.lastLoad);
+}
+
+/* ---------- 로드 / 자동 갱신 ---------- */
+let timer = null;
+async function load() {
+  try {
+    const data = await api("/api/agents");
+    S.agents = data.agents;
+    S.allowControl = data.allow_control;
+    S.interval = data.poll_interval_sec;
+    S.lastLoad = Date.now() / 1000;
+    renderAll();
+  } catch (e) {
+    flash("마스터 응답 오류: " + e.message, true);
+  }
+  clearTimeout(timer);
+  /* 스캔 중인 서버가 있으면 5초, 아니면 30초마다 화면 갱신 */
+  timer = setTimeout(load, S.agents.some(isScanning) ? 5000 : 30000);
+}
+load();
+</script>
+</body>
+</html>

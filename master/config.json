@@ -1,0 +1,11 @@
+{
+  "port": 15900,
+  "agent_default_port": 15891,
+  "poll_interval_sec": 300,
+  "scan_poll_sec": 10,
+  "request_timeout_sec": 10,
+  "max_parallel": 8,
+  "cleanup_top_per_agent": 100,
+  "allow_agent_control": true,
+  "db_path": "data/fs_master.db"
+}

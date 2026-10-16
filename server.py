@@ -17,7 +17,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, unquote, urlparse
 
-from app import db, scanner
+from app import db, master_link, scanner
 from app.config import load_config, resolve_db_path, resolve_scan_roots, scan_include_patterns
 
 CFG = load_config()
@@ -505,6 +505,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(api_changes(q))
             if route == "/api/history":
                 return self._send_json(api_history(q))
+            if route == "/api/master":
+                return self._send_json(master_link.status())
             return self._send_json({"detail": "not found"}, 404)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -624,6 +626,7 @@ def main():
     PID_FILE.write_text(str(os.getpid()))
     # kill(SIGTERM)로 종료해도 pid 파일을 정리하도록
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+    master_link.start(CFG, args.port, DB_PATH.parent)
     print("fs-agent serving on http://%s:%d (PID %d)" % (args.host, args.port, os.getpid()))
     sys.stdout.flush()
     try:

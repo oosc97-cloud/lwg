@@ -223,7 +223,8 @@ POLLER = Poller()
 
 def _agent_view(a):
     out = {k: a[k] for k in ("id", "name", "url", "enabled", "status", "error",
-                             "added_at", "last_poll_at", "last_ok_at", "hostname", "ip")}
+                             "added_at", "last_poll_at", "last_ok_at", "hostname", "ip", "last_seen_at")}
+    out["auto"] = bool(a["agent_key"])
     for key in ("scan", "summary", "roots", "tree"):
         out[key] = json.loads(a[key]) if a[key] else None
     return out
@@ -267,6 +268,30 @@ def api_add_agent(body):
     if aid is None:
         return 409, {"detail": "이미 등록된 주소입니다: " + url}
     POLLER.force(aid)
+    return 200, {"id": aid, "url": url}
+
+
+_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def api_register(body, client_ip):
+    """에이전트 자동 등록 (에이전트가 주기적으로 호출). 주소 = 접속해 온 IP + 에이전트가 알려준 포트."""
+    key = str(body.get("agent_key") or "")
+    if not _KEY_RE.match(key):
+        return 400, {"detail": "agent_key가 올바르지 않습니다."}
+    try:
+        port = int(body.get("port"))
+        if not 1 <= port <= 65535:
+            raise ValueError
+    except (TypeError, ValueError):
+        return 400, {"detail": "port가 올바르지 않습니다."}
+    if client_ip.startswith("::ffff:"):
+        client_ip = client_ip[len("::ffff:"):]
+    url = normalize_url("%s:%d" % ("[%s]" % client_ip if ":" in client_ip else client_ip, port))
+    hostname = str(body.get("hostname") or "")[:200]
+    aid, changed = mdb.register_agent(DB_PATH, key, url, hostname, time.time())
+    if changed:
+        POLLER.force(aid)
     return 200, {"id": aid, "url": url}
 
 
@@ -426,6 +451,9 @@ class Handler(BaseHTTPRequestHandler):
         body = self._json_body()
         if route == "/api/agents":
             status, payload = api_add_agent(body)
+            return self._send_json(payload, status)
+        if route == "/api/register":
+            status, payload = api_register(body, self.client_address[0])
             return self._send_json(payload, status)
         if route == "/api/poll":
             try:

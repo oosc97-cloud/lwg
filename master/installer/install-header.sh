@@ -5,7 +5,7 @@
 #  대상: RHEL 8.x (폐쇄망), python3 3.6 이상, systemd
 #
 #  설치/업그레이드 : sudo bash fs-master-install.sh [--port 15900] [--prefix /opt/fs-master]
-#                    [--agent 10.0.0.5:15892 --agent 10.0.0.6 ...]  (에이전트 미리 등록, 생략 가능)
+#                    [--agent 10.0.0.5:15892 ...]  (수동 등록, 보통은 불필요: 에이전트를 --master 로 설치하면 자동 등록)
 #  상태 확인       : sudo bash fs-master-install.sh --status
 #  제거            : sudo bash fs-master-install.sh --uninstall [--purge]
 #                    (--purge 없으면 등록 목록·수집 결과 data/와 config.json은 남김)
@@ -266,8 +266,11 @@ EOF
     info "설치 완료 ($( [ "$upgrade" = 1 ] && echo 업그레이드 || echo 신규 설치)). 브라우저에서 접속:"
     host_urls "$PORT"
     echo
-    echo "  에이전트 추가: 화면의 [서버 관리] 탭에서 에이전트 주소(예: 10.0.0.5:15892)를 등록하세요."
-    echo "  마스터 서버에서 각 에이전트의 15892 포트로 접속할 수 있어야 합니다 (방화벽은 건드리지 않음)."
+    local myip
+    myip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    echo "  에이전트 추가: 각 서버에서 아래처럼 설치하면 이 마스터에 자동 등록됩니다."
+    echo "      sudo bash fs-agent-m-install.sh --master ${myip:-<마스터IP>}$( [ "$PORT" = 15900 ] || echo ":$PORT")"
+    echo "  마스터 ↔ 에이전트 사이에 $PORT(마스터)·15892(에이전트) 포트가 열려 있어야 합니다 (방화벽은 건드리지 않음)."
     echo "  상태: systemctl status $SERVICE   로그: journalctl -u $SERVICE"
     echo "  재시작: systemctl restart $SERVICE   제거: sudo bash $0 --uninstall"
     echo "  부팅 시 자동 시작하지 않습니다. 서버 재부팅 후에는 systemctl start $SERVICE 로 시작하세요."

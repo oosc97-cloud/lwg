@@ -35,6 +35,13 @@ def connect(db_path):
 def init_db(db_path):
     with connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        # 자동 등록: agent_key = 에이전트가 보내는 서버별 고유 키, last_seen_at = 마지막 등록 신호
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(agents)")]
+        if "agent_key" not in cols:
+            conn.execute("ALTER TABLE agents ADD COLUMN agent_key TEXT")
+        if "last_seen_at" not in cols:
+            conn.execute("ALTER TABLE agents ADD COLUMN last_seen_at REAL")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_key ON agents(agent_key) WHERE agent_key IS NOT NULL")
 
 
 def list_agents(db_path):
@@ -72,6 +79,30 @@ def update_agent(db_path, aid, fields):
         return True
     except sqlite3.IntegrityError:
         return False
+
+
+def register_agent(db_path, key, url, hostname, now):
+    """에이전트 자동 등록. (id, 새로 등록되었거나 주소가 바뀌었는지)를 돌려준다.
+    같은 키가 있으면 주소·호스트명만 갱신, 없으면 같은 주소의 수동 등록 항목에 키를 붙이고, 그것도 없으면 새로 추가."""
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT id, url FROM agents WHERE agent_key = ?", (key,)).fetchone()
+        if row:
+            changed = row["url"] != url
+            if changed:  # IP가 바뀜: 그 주소로 따로 등록돼 있던 항목은 정리
+                conn.execute("DELETE FROM agents WHERE url = ? AND id != ?", (url, row["id"]))
+                conn.execute(
+                    "UPDATE agents SET url=?, status='unknown', error='' WHERE id = ?", (url, row["id"]))
+            conn.execute("UPDATE agents SET last_seen_at=?, hostname=CASE WHEN ?='' THEN hostname ELSE ? END "
+                         "WHERE id = ?", (now, hostname, hostname, row["id"]))
+            return row["id"], changed
+        row = conn.execute("SELECT id FROM agents WHERE url = ?", (url,)).fetchone()
+        if row:
+            conn.execute("UPDATE agents SET agent_key=?, last_seen_at=? WHERE id = ?", (key, now, row["id"]))
+            return row["id"], False
+        cur = conn.execute(
+            "INSERT INTO agents (url, name, added_at, agent_key, last_seen_at, hostname) VALUES (?, '', ?, ?, ?, ?)",
+            (url, now, key, now, hostname))
+        return cur.lastrowid, True
 
 
 def delete_agent(db_path, aid):

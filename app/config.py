@@ -29,6 +29,9 @@ DEFAULTS = {
     # 스캔 이력: 루트별 완료 스캔 keep_scans개, 루트 기준 depth 깊이까지 디렉터리 집계 보관
     "history": {"keep_scans": 10, "depth": 2},
     "db_path": "data/fs_agent.db",
+    # 마스터 서버(fs-master) 주소. 비우면 단독 실행. 예: "http://10.0.0.9:15900"
+    "master": "",
+    "master_heartbeat_sec": 300,  # 마스터에 등록 신호를 보내는 간격
 }
 
 NESTED_KEYS = ("scan_include", "score", "grades", "cleanup", "history")

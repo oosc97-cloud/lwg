@@ -3,24 +3,28 @@
 #  파일시스템 Agent 설치 파일 (자체 압축 해제형)
 #  대상: RHEL 8.x (폐쇄망), python3 3.6 이상, systemd
 #
-#  설치/업그레이드 : sudo bash fs-agent-install.sh [--port 15891] [--prefix /opt/fs-agent]
-#  상태 확인       : sudo bash fs-agent-install.sh --status
-#  제거            : sudo bash fs-agent-install.sh --uninstall [--purge]
+#  설치/업그레이드 : sudo bash @INSTALLER@ [--port @PORT@] [--prefix @PREFIX@] [--master <마스터IP>]
+#                    (--master: 마스터 서버(fs-master)에 자동 등록. @MASTER_NOTE@)
+#  상태 확인       : sudo bash @INSTALLER@ --status
+#  제거            : sudo bash @INSTALLER@ --uninstall [--purge]
 #                    (--purge 없으면 스캔 결과 data/와 config.json은 남김)
-#  번들 풀기만     : bash fs-agent-install.sh --extract <폴더>
+#  번들 풀기만     : bash @INSTALLER@ --extract <폴더>
 # =====================================================================
 set -u
 VERSION="@VERSION@"
 TMPD=""
-SERVICE="fs-agent"
-PREFIX="/opt/fs-agent"
+SERVICE="@SERVICE@"
+PREFIX="@PREFIX@"
+DEFAULT_PORT="@PORT@"
+EDITION="@EDITION@"        # standalone | master (마스터 연동 에이전트: 처음 설치할 때 --master 필수)
 PORT=""
+MASTER=""
 ACTION="install"
 PURGE=0
 EXTRACT_DIR=""
 UNIT_DIR="${FS_AGENT_UNIT_DIR:-/etc/systemd/system}"   # 테스트용으로만 바꿈
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 info() { echo "[fs-agent] $*"; }
 warn() { echo "[fs-agent] 경고: $*" >&2; }
 die()  { echo "[fs-agent] 실패: $*" >&2; exit 1; }
@@ -31,6 +35,8 @@ while [ $# -gt 0 ]; do
     --port=*) PORT="${1#*=}"; shift ;;
     --prefix) PREFIX="${2:-}"; shift 2 ;;
     --prefix=*) PREFIX="${1#*=}"; shift ;;
+    --master) MASTER="${2:-}"; shift 2 ;;
+    --master=*) MASTER="${1#*=}"; shift ;;
     --uninstall) ACTION="uninstall"; shift ;;
     --purge) PURGE=1; shift ;;
     --status) ACTION="status"; shift ;;
@@ -45,6 +51,11 @@ if [ -n "$PORT" ]; then
   [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || die "--port 범위는 1~65535 입니다: $PORT"
 fi
 UNIT_FILE="$UNIT_DIR/$SERVICE.service"
+if [ -n "$MASTER" ]; then   # 10.0.0.9 → http://10.0.0.9:15900
+  case "$MASTER" in *://*) ;; *) MASTER="http://$MASTER" ;; esac
+  MASTER="${MASTER%/}"
+  case "${MASTER#*://}" in *:[0-9]*) ;; *) MASTER="$MASTER:15900" ;; esac
+fi
 
 extract_bundle() {   # $1 = 대상 폴더
   local line
@@ -77,24 +88,26 @@ EOF
 }
 
 config_port() {   # $1 = config.json 경로
-  "$PY" - "$1" <<'EOF' 2>/dev/null || echo 15891
+  "$PY" - "$1" "$DEFAULT_PORT" <<'EOF' 2>/dev/null || echo "$DEFAULT_PORT"
 import json, sys
 try:
-    print(int(json.load(open(sys.argv[1], encoding="utf-8")).get("port", 15891)))
+    print(int(json.load(open(sys.argv[1], encoding="utf-8")).get("port", int(sys.argv[2]))))
 except Exception:
-    print(15891)
+    print(sys.argv[2])
 EOF
 }
 
-set_config_port() {   # $1 = config.json, $2 = 포트 (다른 설정은 그대로 둠)
-  "$PY" - "$1" "$2" <<'EOF' || die "config.json에 포트를 쓰지 못했습니다."
+set_config_port() {   # $1 = config.json, $2 = 포트, $3 = 마스터 주소(비우면 기존 값 유지). 다른 설정은 그대로 둠
+  "$PY" - "$1" "$2" "${3:-}" <<'EOF' || die "config.json에 포트를 쓰지 못했습니다."
 import json, sys
 from collections import OrderedDict
-path, port = sys.argv[1], int(sys.argv[2])
+path, port, master = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 with open(path, encoding="utf-8") as f:
     cfg = json.load(f, object_pairs_hook=OrderedDict)
 cfg["port"] = port
 cfg.move_to_end("port", last=False)
+if master:
+    cfg["master"] = master
 # 이전 버전 설정 정리: 제외 목록 방식 → 포함 목록(scan_include) 방식
 for k in ("linux_excludes", "windows_excludes", "exclude_names"):
     if cfg.pop(k, None) is not None:
@@ -156,6 +169,38 @@ EOF
   done
 }
 
+config_master() {   # $1 = config.json. 마스터 주소가 설정돼 있으면 출력하고 0
+  [ -f "$1" ] || return 1
+  "$PY" - "$1" <<'EOF' 2>/dev/null
+import json, sys
+m = json.load(open(sys.argv[1], encoding="utf-8")).get("master") or ""
+print(m)
+sys.exit(0 if m else 1)
+EOF
+}
+
+check_master() {   # 마스터 자동 등록 결과 확인 (최대 15초)
+  local m
+  m=$(config_master "$PREFIX/config.json") || return 0
+  info "마스터 서버 $m 에 자동 등록합니다..."
+  "$PY" - "$PORT" <<'EOF'
+import json, sys, time, urllib.request
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+st = {}
+for _ in range(15):
+    try:
+        st = json.loads(opener.open("http://127.0.0.1:%s/api/master" % sys.argv[1], timeout=2).read().decode("utf-8"))
+    except Exception:
+        st = {}
+    if st.get("last_ok_at"):
+        print("[fs-agent] 마스터 등록 완료 (마스터 화면에 이 서버가 나타납니다)")
+        sys.exit(0)
+    time.sleep(1)
+print("[fs-agent] 경고: 마스터에 아직 등록하지 못했습니다: %s" % (st.get("last_error") or "응답 없음"))
+print("[fs-agent]       에이전트가 30초마다 다시 시도합니다. 마스터 서버가 켜져 있는지, 마스터 포트로 접속되는지 확인하세요.")
+EOF
+}
+
 need_root() { [ "$(id -u)" = "0" ] || die "root 권한이 필요합니다. sudo bash $0 ... 로 실행하세요."; }
 
 # ---------------------------------------------------------------------
@@ -208,7 +253,10 @@ do_install() {
     [ -f "$PREFIX/config.json" ] && old_port=$(config_port "$PREFIX/config.json")
     info "기존 설치를 업그레이드합니다: $PREFIX ($(cat "$PREFIX/VERSION" 2>/dev/null || echo '버전 정보 없음'))"
   fi
-  [ -n "$PORT" ] || PORT="${old_port:-15891}"
+  [ -n "$PORT" ] || PORT="${old_port:-$DEFAULT_PORT}"
+  if [ "$EDITION" = master ] && [ -z "$MASTER" ] && ! config_master "$PREFIX/config.json" >/dev/null; then
+    die "마스터 서버 주소를 지정하세요: sudo bash $0 --master <마스터IP>"
+  fi
 
   # 우리 서비스가 그 포트를 쓰고 있다면 먼저 멈춘 뒤 확인 (다른 프로세스는 절대 건드리지 않음)
   local was_running=0
@@ -235,7 +283,7 @@ do_install() {
     info "기존 config.json 유지 (새 기본 설정은 config.json.new 참고)"
   fi
   cp -a "$tmp/." "$PREFIX/"
-  set_config_port "$PREFIX/config.json" "$PORT"
+  set_config_port "$PREFIX/config.json" "$PORT" "$MASTER"
   chown -R root:root "$PREFIX"
   chmod 750 "$PREFIX/data"
   rm -f "$PREFIX/fs-agent.pid"
@@ -244,7 +292,7 @@ do_install() {
   [ -f "$UNIT_FILE" ] && systemctl disable "$SERVICE" >/dev/null 2>&1
   cat > "$UNIT_FILE" <<EOF
 [Unit]
-Description=파일시스템 Agent (fs-agent $VERSION)
+Description=파일시스템 Agent ($SERVICE $VERSION)
 After=network-online.target local-fs.target remote-fs.target
 Wants=network-online.target
 
@@ -254,11 +302,11 @@ WorkingDirectory=$PREFIX
 ExecStart=$PY -u $PREFIX/server.py --host 0.0.0.0
 Restart=on-failure
 RestartSec=30
-# 포트 충돌(종료 코드 1) 등으로 실패하면 30초 간격으로 재시도. 로그는 journalctl -u fs-agent
+# 포트 충돌(종료 코드 1) 등으로 실패하면 30초 간격으로 재시도. 로그는 journalctl -u $SERVICE
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
-# 부팅 시 자동 시작하지 않음 ([Install] 없음). 재부팅 후에는 systemctl start fs-agent 로 수동 시작
+# 부팅 시 자동 시작하지 않음 ([Install] 없음). 재부팅 후에는 systemctl start $SERVICE 로 수동 시작
 EOF
   systemctl daemon-reload
   systemctl restart "$SERVICE" || die "서비스 시작 실패: journalctl -u $SERVICE 확인"
@@ -274,6 +322,7 @@ EOF
     sleep 1
   done
   check_noatime
+  [ "$ok" = 1 ] && check_master
   if [ "$ok" = 1 ]; then
     info "설치 완료 ($( [ "$upgrade" = 1 ] && echo 업그레이드 || echo 신규 설치)). 브라우저에서 접속:"
     host_urls "$PORT"

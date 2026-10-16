@@ -29,6 +29,7 @@ python3 server.py                 # serve dashboard on 0.0.0.0:15891 (config.jso
                                   # --release also writes release/fs-agent-install.sh (committed so deploy.sh drops it on the test server)
                                   # (installer/install-header.sh + tar.gz of runtime files only; systemd unit not enabled at boot, keeps data/ & config.json)
 master/build-installer.sh [--release] # dist/fs-master-install-<ver>.sh; --release also writes release/fs-master-install.sh
+./build-installer.sh --master-edition [--release]  # master-linked agent: fs-agent-m, /opt/fs-agent-m, port 15892, --master required
 cd master && ./restart.sh / ./stop.sh  # run the master (port 15900) from the repo
 ```
 
@@ -36,15 +37,22 @@ No test suite or linter is configured yet.
 
 ## Master edition (`master/`)
 
-Separate component; the agent and `release/fs-agent-install.sh` stay untouched and need no
-change. `master/server.py` (port 15900, own `config.json`, `data/fs_master.db`, systemd
-`fs-master`, `/opt/fs-master`) pulls each registered agent's existing API (default agent port 15892; agents are installed with `--port 15892`)
-(`scan/status`, `summary`, `roots`, `tree`, `cleanup-candidates`) every `poll_interval_sec`
-(scan-in-progress agents every `scan_poll_sec`, status only) and keeps the last result on
-failure. `/agent/<id>/` proxies the agent's own dashboard by rewriting its `"/api/` fetch
-paths to `/agent/<id>/api/` — keep agent frontend API calls as quoted absolute `/api/...`
-strings so this keeps working. POST pass-through is limited to scan, scan/cancel, reset
-(`allow_agent_control`). Agents are registered in the master UI or `--agent` at install.
+Separate component; `release/fs-agent-install.sh` (standalone, 15891) is left as built — do not
+rebuild it for master work. Agents self-register: `app/master_link.py` runs only when
+`config.json` `"master"` is set and POSTs `{agent_key, port, hostname}` to the master's
+`/api/register` every `master_heartbeat_sec` (retry 30s); `agent_key` lives in
+`data/agent_key`. The master builds the agent URL from the request's source IP + port and
+matches by key (IP changes update the row). Agent exposes `GET /api/master` (link status,
+used by the installer). The installer header is shared and templated (`@SERVICE@ @PREFIX@
+@PORT@ @EDITION@ @INSTALLER@`); `--master-edition` builds `fs-agent-m` (15892, `--master`
+required on first install) and both editions accept `--master`.
+`master/server.py` (port 15900, own `config.json`, `data/fs_master.db`, systemd
+`fs-master`, `/opt/fs-master`) pulls each agent's existing API (`scan/status`, `summary`,
+`roots`, `tree`, `cleanup-candidates`) every `poll_interval_sec` (scanning agents every
+`scan_poll_sec`, status only) and keeps the last result on failure. `/agent/<id>/` proxies
+the agent dashboard by rewriting its `"/api/` fetch paths to `/agent/<id>/api/` — keep agent
+frontend API calls as quoted absolute `/api/...` strings. POST pass-through is limited to
+scan, scan/cancel, reset (`allow_agent_control`).
 
 ## Architecture
 

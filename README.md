@@ -87,11 +87,13 @@ sudo bash fs-agent-install-<버전>.sh --uninstall --purge   # 전부 삭제
 
 ## 여러 서버 통합 보기 (마스터, 선택)
 
-여러 서버에 에이전트를 설치했다면, 마스터 서버 한 대에 **fs-master**를 설치해 모든 서버를 한 화면에서 볼 수 있습니다.
-에이전트는 위 설치 파일을 그대로 쓰되 `--port 15892`로 설치합니다. 마스터가 각 에이전트(15892)를 주기적으로 읽어 옵니다.
+여러 서버를 한 화면에서 보려면 마스터 서버 한 대에 **fs-master**를 설치하고, 각 서버에는 마스터 연동용 에이전트를
+마스터 IP를 넣어 설치합니다. 에이전트가 마스터에 스스로 등록하므로 마스터 화면에서 IP를 입력할 필요가 없습니다.
+위의 단독 실행용 설치 파일(`fs-agent-install.sh`)은 그대로이며, `--master` 없이 쓰면 예전과 똑같이 동작합니다.
 
 ```bash
-sudo bash release/fs-master-install.sh --agent 10.0.0.5 --agent 10.0.0.6   # /opt/fs-master, 포트 15900
+sudo bash release/fs-master-install.sh                       # 마스터 서버: /opt/fs-master, 포트 15900
+sudo bash release/fs-agent-m-install.sh --master <마스터IP>   # 각 서버: /opt/fs-agent-m, 포트 15892, 자동 등록
 ```
 
 자세한 내용은 [master/README.md](master/README.md)를 보세요.

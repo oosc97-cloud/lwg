@@ -5,7 +5,6 @@
 """
 import argparse
 import errno
-import html
 import json
 import os
 import signal
@@ -459,19 +458,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _send_no_ui(self):
-        """web_ui=false (마스터 연동판): 화면 대신 마스터 안내만 보여 준다. API는 그대로 응답."""
-        master = master_link.status().get("master") or ""
-        link = '<a href="{0}">{0}</a>'.format(html.escape(master)) if master else "마스터 서버"
-        data = ('<!DOCTYPE html><meta charset="utf-8"><title>fs-agent</title>'
-                '<p style="font-family:sans-serif">이 에이전트는 웹 화면을 제공하지 않습니다. '
-                '{} 화면에서 확인하세요.</p>'.format(link)).encode("utf-8")
-        self.send_response(404)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
     def _send_file(self, path):
         data = path.read_bytes()
         self.send_response(200)
@@ -487,8 +473,9 @@ class Handler(BaseHTTPRequestHandler):
         route = parsed.path
         q = {k: v[0] for k, v in parse_qs(parsed.query).items()}
         try:
+            # web_ui=false (마스터 연동판): 웹 화면 없음. 마스터가 쓰는 API만 응답
             if (route == "/" or route.startswith("/static/")) and not CFG.get("web_ui", True):
-                return self._send_no_ui()
+                return self._send_json({"detail": "not found"}, 404)
             if route == "/":
                 return self._send_file(STATIC_DIR / "index.html")
             if route.startswith("/static/"):

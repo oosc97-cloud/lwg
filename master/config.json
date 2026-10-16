@@ -1,6 +1,6 @@
 {
   "port": 15900,
-  "agent_default_port": 15891,
+  "agent_default_port": 15892,
   "poll_interval_sec": 300,
   "scan_poll_sec": 10,
   "request_timeout_sec": 10,

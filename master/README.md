@@ -4,19 +4,20 @@
 에이전트(기존 release 설치 파일)는 그대로 쓰고, 마스터만 따로 설치합니다.
 
 - 표준 라이브러리만 사용 (Python 3.6+, pip·인터넷 불필요) — 폐쇄망 RHEL 8에서 그대로 실행
-- 기본 포트 **15900** (에이전트는 15891)
+- 기본 포트 **15900** (에이전트는 15892)
 
 ## 구조
 
 ```
-[마스터 15900] ──(주기적으로 읽기: HTTP GET)──▶ [에이전트 A 15891]
-     │                                        ▶ [에이전트 B 15891]
+[마스터 15900] ──(주기적으로 읽기: HTTP GET)──▶ [에이전트 A 15892]
+     │                                        ▶ [에이전트 B 15892]
      └─ 브라우저: 통합 화면 + 서버별 상세 화면     ▶ ...
 ```
 
 - 마스터가 등록된 각 에이전트의 기존 API(`/api/scan/status`, `/api/summary`, `/api/tree`,
   `/api/roots`, `/api/cleanup-candidates`)를 **5분마다** 읽어 저장합니다. 스캔 중인 에이전트는 10초마다 진행 상황만 읽습니다.
-- 에이전트 쪽은 변경·설정이 필요 없습니다. **마스터 서버에서 각 에이전트의 15891 포트로 접속만 되면** 됩니다
+- 마스터 구성에서 에이전트 포트는 **15892**입니다. 에이전트는 기존 설치 파일에 `--port 15892`만 붙여 설치하고,
+  **마스터 서버에서 각 에이전트의 15892 포트로 접속만 되면** 됩니다
   (방향: 마스터 → 에이전트. 에이전트가 마스터로 접속하지 않음).
 - 에이전트가 꺼져 있어도 마지막으로 받은 요약은 그대로 보여 주고 상태만 "연결 실패"로 표시합니다.
 
@@ -37,7 +38,7 @@
 
 ```bash
 sudo bash fs-master-install.sh                       # 설치 또는 업그레이드 (/opt/fs-master, 포트 15900)
-sudo bash fs-master-install.sh --agent 10.0.0.5 --agent 10.0.0.6:15891   # 설치하면서 에이전트 등록
+sudo bash fs-master-install.sh --agent 10.0.0.5 --agent 10.0.0.6:15892   # 설치하면서 에이전트 등록
 sudo bash fs-master-install.sh --port 15901          # 다른 포트로
 sudo bash fs-master-install.sh --status              # 버전·서비스 상태·접속 주소
 sudo bash fs-master-install.sh --uninstall [--purge] # 제거 (--purge 없으면 data/와 config.json 남김)
@@ -47,7 +48,7 @@ sudo bash fs-master-install.sh --uninstall [--purge] # 제거 (--purge 없으면
 - 포트가 다른 프로세스에 사용 중이면 아무것도 건드리지 않고 중단, 방화벽은 건드리지 않음
 - 업그레이드 때 `data/`(등록 목록·수집 결과)와 `config.json`은 유지
 
-에이전트는 기존과 똑같이 각 서버에 `release/fs-agent-install.sh`로 설치합니다.
+에이전트는 각 서버에 기존 설치 파일로 포트만 15892로 지정해 설치합니다: `sudo bash fs-agent-install.sh --port 15892`
 같은 서버에 에이전트와 마스터를 함께 설치해도 됩니다 (포트·폴더·서비스 이름이 다름).
 
 ## 설치 파일 만들기 (개발 PC/테스트 서버)
@@ -70,7 +71,7 @@ python3 master/server.py --port 15900
 | 키 | 기본값 | 설명 |
 |---|---|---|
 | `port` | 15900 | 마스터 화면 포트 |
-| `agent_default_port` | 15891 | 주소에 포트를 생략했을 때 붙일 에이전트 포트 |
+| `agent_default_port` | 15892 | 주소에 포트를 생략했을 때 붙일 에이전트 포트 |
 | `poll_interval_sec` | 300 | 에이전트 요약 수집 주기(초) |
 | `scan_poll_sec` | 10 | 스캔 중인 에이전트의 진행 상황 수집 주기(초) |
 | `request_timeout_sec` | 10 | 에이전트 요청 제한 시간(초) |

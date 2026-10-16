@@ -38,7 +38,7 @@ No test suite or linter is configured yet.
 
 Separate component; the agent and `release/fs-agent-install.sh` stay untouched and need no
 change. `master/server.py` (port 15900, own `config.json`, `data/fs_master.db`, systemd
-`fs-master`, `/opt/fs-master`) pulls each registered agent's existing API
+`fs-master`, `/opt/fs-master`) pulls each registered agent's existing API (default agent port 15892; agents are installed with `--port 15892`)
 (`scan/status`, `summary`, `roots`, `tree`, `cleanup-candidates`) every `poll_interval_sec`
 (scan-in-progress agents every `scan_poll_sec`, status only) and keeps the last result on
 failure. `/agent/<id>/` proxies the agent's own dashboard by rewriting its `"/api/` fetch

@@ -5,7 +5,7 @@
 #  대상: RHEL 8.x (폐쇄망), python3 3.6 이상, systemd
 #
 #  설치/업그레이드 : sudo bash fs-master-install.sh [--port 15900] [--prefix /opt/fs-master]
-#                    [--agent 10.0.0.5:15891 --agent 10.0.0.6 ...]  (에이전트 미리 등록, 생략 가능)
+#                    [--agent 10.0.0.5:15892 --agent 10.0.0.6 ...]  (에이전트 미리 등록, 생략 가능)
 #  상태 확인       : sudo bash fs-master-install.sh --status
 #  제거            : sudo bash fs-master-install.sh --uninstall [--purge]
 #                    (--purge 없으면 등록 목록·수집 결과 data/와 config.json은 남김)
@@ -100,6 +100,10 @@ with open(path, encoding="utf-8") as f:
     cfg = json.load(f, object_pairs_hook=OrderedDict)
 cfg["port"] = port
 cfg.move_to_end("port", last=False)
+# 이전 버전 기본값(에이전트 15891) → 마스터용 에이전트 포트 15892
+if cfg.get("agent_default_port") == 15891:
+    cfg["agent_default_port"] = 15892
+    print("[fs-master] config.json: agent_default_port 15891 → 15892 (이미 등록한 에이전트 주소는 그대로)")
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, ensure_ascii=False, indent=2)
     f.write("\n")
@@ -262,8 +266,8 @@ EOF
     info "설치 완료 ($( [ "$upgrade" = 1 ] && echo 업그레이드 || echo 신규 설치)). 브라우저에서 접속:"
     host_urls "$PORT"
     echo
-    echo "  에이전트 추가: 화면의 [서버 관리] 탭에서 에이전트 주소(예: 10.0.0.5:15891)를 등록하세요."
-    echo "  마스터 서버에서 각 에이전트의 15891 포트로 접속할 수 있어야 합니다 (방화벽은 건드리지 않음)."
+    echo "  에이전트 추가: 화면의 [서버 관리] 탭에서 에이전트 주소(예: 10.0.0.5:15892)를 등록하세요."
+    echo "  마스터 서버에서 각 에이전트의 15892 포트로 접속할 수 있어야 합니다 (방화벽은 건드리지 않음)."
     echo "  상태: systemctl status $SERVICE   로그: journalctl -u $SERVICE"
     echo "  재시작: systemctl restart $SERVICE   제거: sudo bash $0 --uninstall"
     echo "  부팅 시 자동 시작하지 않습니다. 서버 재부팅 후에는 systemctl start $SERVICE 로 시작하세요."

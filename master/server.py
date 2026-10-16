@@ -32,7 +32,7 @@ PID_FILE = BASE_DIR / "fs-master.pid"
 
 DEFAULTS = {
     "port": 15900,                 # 마스터 웹 화면 포트
-    "agent_default_port": 15891,   # 주소에 포트를 안 적으면 붙일 에이전트 포트
+    "agent_default_port": 15892,   # 주소에 포트를 안 적으면 붙일 에이전트 포트
     "poll_interval_sec": 300,      # 에이전트 요약 수집 주기
     "scan_poll_sec": 10,           # 스캔 중인 에이전트는 이 간격으로 진행 상황만 수집
     "request_timeout_sec": 10,     # 에이전트 요청 제한 시간
@@ -75,7 +75,7 @@ class AgentError(Exception):
 
 
 def normalize_url(raw):
-    """'10.0.0.5', '10.0.0.5:15891', 'http://host:15891/' → 'http://host:port'."""
+    """'10.0.0.5', '10.0.0.5:15892', 'http://host:15892/' → 'http://host:port'."""
     s = (raw or "").strip()
     if not s:
         raise ValueError("주소를 입력하세요.")

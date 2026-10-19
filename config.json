@@ -13,5 +13,6 @@
   "grades": {"hot": 70, "warm": 40, "cold": 10},
   "cleanup": {"grades": ["cold", "stale"], "min_size_mb": 0},
   "history": {"keep_scans": 10, "depth": 2},
+  "policy": {"file_prefix": "filesystem_auto_clear.env_", "max_bytes": 262144, "extra_paths": []},
   "db_path": "data/fs_agent.db"
 }

@@ -9,7 +9,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import db
+from . import db, policy
 from .hostinfo import get_host_info
 from .scoring import grade, value_score
 
@@ -44,15 +44,25 @@ def run_scan_many(roots, cfg: dict, db_path: Path, cancel_event=None) -> None:
     스캔 전에 대상 밖 루트(과거 수동 스캔 잔재)의 데이터를 정리한다.
     cancel_event가 set되면 진행 중인 루트를 멈추고 남은 루트도 건너뛴다."""
     purge_other_roots(roots, db_path)
+    policy_hits = []  # 스캔 중 발견한 정리 정책 파일(filesystem_auto_clear.env_*)
+    cancelled = False
     for root in roots:
         if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
             break
         try:
-            run_scan(root, cfg, db_path, cancel_event)
+            run_scan(root, cfg, db_path, cancel_event, policy_hits)
         except ScanCancelled:
+            cancelled = True
             break
         except Exception:
             continue
+    # 정책 분석은 스캔 결과(files)를 쓰므로 스캔이 끝난 뒤에. 취소 시에는 직전 분석 유지
+    if not cancelled:
+        try:
+            policy.refresh(policy_hits, roots, cfg, db_path)
+        except Exception:
+            pass
 
 
 def purge_other_roots(roots, db_path: Path) -> None:
@@ -76,7 +86,7 @@ def purge_other_roots(roots, db_path: Path) -> None:
         conn.close()
 
 
-def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
+def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None, policy_hits=None) -> int:
     score_cfg = cfg["score"]
     thresholds = cfg["grades"]
     cleanup_grades = set(cfg["cleanup"]["grades"])
@@ -132,6 +142,8 @@ def run_scan(root: str, cfg: dict, db_path: Path, cancel_event=None) -> int:
                             dir_stats[entry.path]  # 빈 폴더도 트리에 표시
                         elif entry.is_file(follow_symlinks=False):
                             st = entry.stat(follow_symlinks=False)
+                            if policy_hits is not None and policy.is_policy_name(entry.name, cfg):
+                                policy_hits.append(entry.path)
                             score = value_score(
                                 st.st_atime,
                                 st.st_mtime,

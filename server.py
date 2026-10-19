@@ -17,7 +17,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, unquote, urlparse
 
-from app import db, master_link, scanner
+from app import db, master_link, policy, scanner
 from app.config import load_config, resolve_db_path, resolve_scan_roots, scan_include_patterns
 
 CFG = load_config()
@@ -99,7 +99,8 @@ def api_reset():
         if _scan_thread is not None and _scan_thread.is_alive():
             return 409, {"detail": "스캔 중에는 초기화할 수 없습니다. 먼저 스캔을 취소하세요."}
         with db.connect(DB_PATH) as conn:
-            for table in ("files", "dirs", "scan_history", "scans"):
+            policy.init(conn)
+            for table in ("files", "dirs", "scan_history", "scans", "policies"):
                 conn.execute("DELETE FROM " + table)
         conn = db.connect(DB_PATH)
         try:
@@ -441,6 +442,12 @@ def api_cleanup_candidates(q):
     return {"files": [dict(r) for r in rows]}
 
 
+def api_policies(q):
+    """정리 정책 파일(filesystem_auto_clear.env_*) 원문·해석·분석. content=0 이면 원문 제외."""
+    items = policy.list_policies(DB_PATH, with_content=q.get("content", "1") != "0")
+    return {"policies": items, "prefix": CFG.get("policy", {}).get("file_prefix", "")}
+
+
 # ---------- HTTP 핸들러 ----------
 
 class Handler(BaseHTTPRequestHandler):
@@ -508,6 +515,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_json(api_changes(q))
             if route == "/api/history":
                 return self._send_json(api_history(q))
+            if route == "/api/policies":
+                return self._send_json(api_policies(q))
             if route == "/api/master":
                 return self._send_json(master_link.status())
             return self._send_json({"detail": "not found"}, 404)

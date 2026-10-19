@@ -41,6 +41,9 @@ def init_db(db_path):
             conn.execute("ALTER TABLE agents ADD COLUMN agent_key TEXT")
         if "last_seen_at" not in cols:
             conn.execute("ALTER TABLE agents ADD COLUMN last_seen_at REAL")
+        # policies = /api/policies JSON (정리 정책 파일 분석, 구버전 에이전트는 NULL)
+        if "policies" not in cols:
+            conn.execute("ALTER TABLE agents ADD COLUMN policies TEXT")
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_key ON agents(agent_key) WHERE agent_key IS NOT NULL")
 
 
@@ -73,7 +76,7 @@ def update_agent(db_path, aid, fields):
             if "url" in fields:  # 주소가 바뀌면 예전 수집 결과는 버린다
                 conn.execute(
                     "UPDATE agents SET status='unknown', error='', scan=NULL, summary=NULL, roots=NULL, "
-                    "tree=NULL, cleanup=NULL, hostname='', ip='' WHERE id = ? AND url != ?",
+                    "tree=NULL, cleanup=NULL, policies=NULL, hostname='', ip='' WHERE id = ? AND url != ?",
                     (aid, fields["url"]))
             conn.execute("UPDATE agents SET %s WHERE id = ?" % cols, list(fields.values()) + [aid])
         return True
@@ -130,6 +133,9 @@ def save_full(db_path, aid, data, now):
              json.dumps(data["cleanup"], ensure_ascii=False), aid))
         if host:
             conn.execute("UPDATE agents SET hostname=?, ip=? WHERE id = ?", (host[0], host[1], aid))
+        if data.get("policies") is not None:
+            conn.execute("UPDATE agents SET policies=? WHERE id = ?",
+                         (json.dumps(data["policies"], ensure_ascii=False), aid))
 
 
 def save_scan(db_path, aid, scan, now):

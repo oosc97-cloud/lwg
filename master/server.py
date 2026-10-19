@@ -120,6 +120,19 @@ def agent_json(base_url, path):
     return obj
 
 
+def agent_policies(base_url):
+    """정리 정책 분석 결과. 정책 기능이 없는 구버전 에이전트(404)는 None."""
+    status, data, _ = agent_request(base_url, "/api/policies")
+    if status == 404:
+        return None
+    if status != 200:
+        raise AgentError("에이전트 오류 (/api/policies, HTTP %d)" % status)
+    try:
+        return json.loads(data.decode("utf-8")).get("policies", [])
+    except ValueError:
+        raise AgentError("fs-agent 응답이 아닙니다 (%s/api/policies)" % base_url)
+
+
 # ---------- 수집 ----------
 
 class Poller(object):
@@ -196,6 +209,7 @@ class Poller(object):
                     "cleanup": agent_json(
                         url, "/api/cleanup-candidates?limit=%d" % int(CFG["cleanup_top_per_agent"])
                     ).get("files", []),
+                    "policies": agent_policies(url),
                 }
                 with self.lock:
                     self.last_full[aid] = now
@@ -225,6 +239,13 @@ def _agent_view(a):
     out = {k: a[k] for k in ("id", "name", "url", "enabled", "status", "error",
                              "added_at", "last_poll_at", "last_ok_at", "hostname", "ip", "last_seen_at")}
     out["auto"] = bool(a["agent_key"])
+    pols = json.loads(a["policies"]) if a.get("policies") else None
+    # 서버 목록용 정책 요약 (원문·규칙은 /api/policies)
+    out["policy"] = None if pols is None else {
+        "count": len(pols),
+        "expired_size": sum((p.get("analysis") or {}).get("expired_size") or 0 for p in pols),
+        "warnings": sum(len((p.get("analysis") or {}).get("warnings") or []) for p in pols),
+    }
     for key in ("scan", "summary", "roots", "tree"):
         out[key] = json.loads(a[key]) if a[key] else None
     return out
@@ -256,6 +277,22 @@ def api_cleanup(q):
             rows.append(f)
     rows.sort(key=lambda f: f.get("size", 0), reverse=True)
     return {"files": rows[:limit], "per_agent": int(CFG["cleanup_top_per_agent"])}
+
+
+def api_policies(q):
+    """서버별 정리 정책 파일 분석 결과 (마지막 수집분)."""
+    agent_filter = q.get("agent")
+    out = []
+    for a in mdb.list_agents(DB_PATH):
+        if agent_filter and str(a["id"]) != agent_filter:
+            continue
+        out.append({
+            "agent_id": a["id"], "name": a["name"], "hostname": a["hostname"], "ip": a["ip"],
+            "url": a["url"], "status": a["status"], "last_ok_at": a["last_ok_at"],
+            "supported": a["policies"] is not None,
+            "policies": json.loads(a["policies"]) if a["policies"] else [],
+        })
+    return {"agents": out}
 
 
 def api_add_agent(body):
@@ -463,6 +500,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(api_agents())
         if route == "/api/cleanup":
             return self._send_json(api_cleanup(q))
+        if route == "/api/policies":
+            return self._send_json(api_policies(q))
         return self._send_json({"detail": "not found"}, 404)
 
     def _post(self, route):

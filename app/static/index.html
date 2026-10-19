@@ -158,6 +158,16 @@
   .delta-down { color: #15803d; }
   @media (prefers-color-scheme: dark) { .delta-up { color: #fb923c; } .delta-down { color: #4ade80; } }
   .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+  /* 정리 정책 */
+  .pol { border: 1px solid var(--grid); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .pol h3 { margin: 0 0 4px; font-size: 13px; }
+  .pol .tw { overflow-x: auto; }
+  .pol .meta { color: var(--text-secondary); font-size: 12px; margin-bottom: 8px; word-break: break-all; }
+  .pol .warn { color: #b45309; font-size: 12px; margin: 2px 0; }
+  @media (prefers-color-scheme: dark) { .pol .warn { color: #fbbf24; } }
+  .pol h4 { margin: 10px 0 4px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .pol pre { background: var(--surface-2); border: 1px solid var(--grid); border-radius: 6px; padding: 8px; font-size: 12px; overflow: auto; max-height: 360px; white-space: pre; margin: 6px 0 0; }
+  .pol details summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
   .muted { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
 
   /* 차트 */
@@ -248,6 +258,7 @@
         <button class="tab" data-tab="map">트리맵</button>
         <button class="tab" data-tab="search">파일 검색</button>
         <button class="tab" data-tab="changes">변화</button>
+        <button class="tab" data-tab="policy">정리 정책</button>
       </div>
       <div class="pane-body" id="tabBody">
         <div class="tabpane" id="tab-details">
@@ -331,6 +342,10 @@
             <tbody id="chgRows"></tbody>
           </table>
           <div class="empty" id="chgEmpty" hidden>비교할 이전 스캔이 없습니다. 스캔을 한 번 더 실행하면 변화가 표시됩니다.</div>
+        </div>
+        <div class="tabpane" id="tab-policy" hidden>
+          <div class="tabtools" id="polTools">스캔 중 찾은 정리 정책 파일(filesystem_auto_clear.env_*) · 스캔이 끝날 때마다 다시 읽어 분석 · 폴더 선택과 무관하게 전체</div>
+          <div id="polList"></div>
         </div>
       </div>
     </div>
@@ -650,7 +665,7 @@ async function getDetail() {
 /* ---------- 탭 ---------- */
 const TABS = {
   details: renderDetails, chart: renderChart, ext: renderExt, age: renderAge,
-  top: renderTop, map: renderMap, search: renderSearch, changes: renderChanges,
+  top: renderTop, map: renderMap, search: renderSearch, changes: renderChanges, policy: renderPolicy,
 };
 document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
   S.tab = b.dataset.tab;
@@ -1032,6 +1047,76 @@ async function renderChanges() {
     if (d.state !== "removed") tr.addEventListener("dblclick", () => selectPath(d.path));
     tbody.appendChild(tr);
   });
+}
+
+/* 정리 정책: 정책 파일별 해석 규칙(경로·보관 기간·패턴)과 스캔 결과 대조, 변수, 원문 */
+function policyCard(p, onPath) {
+  const a = p.analysis || {};
+  const box = el("div", "pol");
+  box.appendChild(el("h3", null, p.name));
+  let meta = p.path + " · 대상 " + (a.target || p.target) + " · 수정 " + fmtDateTime(p.mtime) + " · " + fmtNum(p.size) + " B";
+  if (a.filesystem) meta += " · " + a.filesystem.path + " 전체 " + fmtBytes(a.filesystem.size) + " (파일 " + fmtNum(a.filesystem.files) + "개)";
+  if (p.truncated) meta += " · 앞부분만 읽음";
+  box.appendChild(el("div", "meta", meta));
+  if (p.error) box.appendChild(el("div", "warn", "읽기 실패: " + p.error));
+  (a.warnings || []).forEach(w => box.appendChild(el("div", "warn", "⚠ " + w)));
+  const rules = a.rules || [];
+  if (rules.length) {
+    box.appendChild(el("h4", null, "정리 규칙 (해석 결과)"));
+    const t = el("table");
+    const hr = el("tr");
+    ["정리 경로", "보관 기간", "파일 패턴", "출처", "현재 파일", "현재 용량", "기간 지난 파일", "기간 지난 용량", "가장 오래된 파일"].forEach((h, i) =>
+      hr.appendChild(el("th", i >= 4 && i <= 7 ? "num" : null, h)));
+    const th = el("thead"); th.appendChild(hr); t.appendChild(th);
+    const tb = el("tbody");
+    rules.forEach(r => {
+      const tr = el("tr", r.in_scan && onPath ? "dirrow" : "");
+      const scan = r.in_scan;
+      tr.append(
+        td(r.path, "path", r.path),
+        td(r.days == null ? "–" : r.days + "일" + (r.days_key ? " (" + r.days_key + ")" : "")),
+        td(r.pattern || "전체"), td(r.source),
+        td(scan ? fmtNum(r.files) : "스캔 밖", "num"), td(scan ? fmtBytes(r.size) : "–", "num"),
+        td(scan && r.days != null ? fmtNum(r.expired_files) : "–", "num" + (r.expired_files ? " delta-up" : "")),
+        td(scan && r.days != null ? fmtBytes(r.expired_size) : "–", "num" + (r.expired_size ? " delta-up" : "")),
+        td(scan && r.oldest_mtime ? fmtDate(r.oldest_mtime) : "–")
+      );
+      if (r.in_scan && onPath) { tr.title = "더블클릭하면 그 폴더로 이동"; tr.addEventListener("dblclick", () => onPath(r.path)); }
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); const w = el("div", "tw"); w.appendChild(t); box.appendChild(w);
+  }
+  if ((p.vars || []).length) {
+    box.appendChild(el("h4", null, "설정 값"));
+    const t = el("table");
+    const hr = el("tr");
+    ["행", "키", "값", "해석"].forEach(h => hr.appendChild(el("th", null, h)));
+    const th = el("thead"); th.appendChild(hr); t.appendChild(th);
+    const tb = el("tbody");
+    p.vars.forEach(v => { const tr = el("tr"); tr.append(td(String(v.line), "num"), td(v.key), td(v.value, "path", v.value), td(v.kind)); tb.appendChild(tr); });
+    t.appendChild(tb); const w = el("div", "tw"); w.appendChild(t); box.appendChild(w);
+  }
+  if (p.content != null) {
+    const det = el("details");
+    det.appendChild(el("summary", null, "원문 보기 (" + (p.encoding || "") + ")"));
+    det.appendChild(el("pre", null, p.content));
+    box.appendChild(det);
+  }
+  return box;
+}
+async function renderPolicy() {
+  const data = await getJSON("/api/policies");
+  const list = $("polList");
+  list.replaceChildren();
+  if (!data.policies.length) {
+    list.appendChild(el("div", "empty", "찾은 정책 파일이 없습니다. 스캔 대상 안에 " + (data.prefix || "filesystem_auto_clear.env_") +
+      "* 파일이 있으면 스캔이 끝날 때 표시됩니다 (스캔 대상 밖이면 config.json policy.extra_paths에 위치를 넣으세요)."));
+    return;
+  }
+  const total = data.policies.reduce((s, p) => s + ((p.analysis || {}).expired_size || 0), 0);
+  $("polTools").textContent = "정책 파일 " + data.policies.length + "개 · 보관 기간이 지났는데 남아 있는 용량 " + fmtBytes(total) +
+    " · 스캔이 끝날 때마다 다시 읽어 분석 (폴더 선택과 무관)";
+  data.policies.forEach(p => list.appendChild(policyCard(p, selectPath)));
 }
 
 /* ---------- 기준 / 단위 ---------- */

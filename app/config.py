@@ -28,6 +28,9 @@ DEFAULTS = {
     "cleanup": {"grades": ["cold", "stale"], "min_size_mb": 0},
     # 스캔 이력: 루트별 완료 스캔 keep_scans개, 루트 기준 depth 깊이까지 디렉터리 집계 보관
     "history": {"keep_scans": 10, "depth": 2},
+    # 정리 정책 파일: 스캔 중 이름이 file_prefix로 시작하는 파일을 읽어 분석 (max_bytes까지만 읽음).
+    # extra_paths: 스캔 대상 밖에 있는 정책 파일 위치(glob), 예: ["/home/*/filesystem_auto_clear.env_*"]
+    "policy": {"file_prefix": "filesystem_auto_clear.env_", "max_bytes": 262144, "extra_paths": []},
     "db_path": "data/fs_agent.db",
     # 마스터 서버(fs-master) 주소. 비우면 단독 실행. 예: "http://10.0.0.9:15900"
     "master": "",
@@ -36,7 +39,7 @@ DEFAULTS = {
     "web_ui": True,
 }
 
-NESTED_KEYS = ("scan_include", "score", "grades", "cleanup", "history")
+NESTED_KEYS = ("scan_include", "score", "grades", "cleanup", "history", "policy")
 
 
 def load_config() -> dict:

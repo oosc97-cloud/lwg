@@ -113,6 +113,21 @@
   .mstack > div { height: 100%; }
   .actions { display: flex; gap: 4px; }
   .empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+  /* 정리 정책 */
+  .polsrv { margin: 4px 0 8px; font-size: 13px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .polsrv .sub { font-weight: 400; color: var(--text-secondary); font-size: 12px; }
+  .polsrv a { font-weight: 400; font-size: 12px; color: var(--accent); }
+  .polnone { color: var(--text-muted); font-size: 12px; margin: 0 0 14px; }
+  .pol { border: 1px solid var(--grid); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .pol h3 { margin: 0 0 4px; font-size: 13px; }
+  .pol .tw { overflow-x: auto; }
+  .pol .meta { color: var(--text-secondary); font-size: 12px; margin-bottom: 8px; word-break: break-all; }
+  .pol .warn { color: #b45309; font-size: 12px; margin: 2px 0; }
+  .pol .hot { color: #c2410c; }
+  @media (prefers-color-scheme: dark) { .pol .warn { color: #fbbf24; } .pol .hot { color: #fb923c; } }
+  .pol h4 { margin: 10px 0 4px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .pol pre { background: var(--surface-2); border: 1px solid var(--grid); border-radius: 6px; padding: 8px; font-size: 12px; overflow: auto; max-height: 360px; white-space: pre; margin: 6px 0 0; }
+  .pol details summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
   .muted { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
   .form { display: grid; grid-template-columns: 1fr; gap: 8px; max-width: 760px; margin-bottom: 14px; }
   .form .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -161,6 +176,7 @@
       <button class="tab active" data-tab="servers">서버</button>
       <button class="tab" data-tab="roots">스캔 대상 폴더</button>
       <button class="tab" data-tab="cleanup">정리 후보</button>
+      <button class="tab" data-tab="policy">정리 정책</button>
       <button class="tab" data-tab="manage">서버 관리</button>
     </div>
     <div class="pane-body">
@@ -196,6 +212,13 @@
           <tbody id="cleanupRows"></tbody>
         </table>
         <div class="empty" id="cleanupEmpty" hidden>정리 후보가 없습니다.</div>
+      </div>
+      <div class="tabpane" id="tab-policy" hidden>
+        <div class="tabtools">
+          <select id="policyAgent"><option value="">서버: 전체</option></select>
+          <span id="policyNote"></span>
+        </div>
+        <div id="policyList"></div>
       </div>
       <div class="tabpane" id="tab-manage" hidden>
         <div class="form">
@@ -608,6 +631,101 @@ async function renderCleanup() {
 }
 $("cleanupAgent").addEventListener("change", renderCleanup);
 
+/* ---------- 정리 정책 ---------- */
+function policyTable(heads, numCols, rows) {
+  const t = el("table");
+  const hr = el("tr");
+  heads.forEach((h, i) => hr.appendChild(el("th", numCols.indexOf(i) >= 0 ? "num" : null, h)));
+  const th = el("thead"); th.appendChild(hr); t.appendChild(th);
+  const tb = el("tbody");
+  rows.forEach(r => { const tr = el("tr"); r.forEach(c => tr.appendChild(c)); tb.appendChild(tr); });
+  t.appendChild(tb);
+  const w = el("div", "tw");
+  w.appendChild(t);
+  return w;
+}
+function policyCard(p) {
+  const a = p.analysis || {};
+  const box = el("div", "pol");
+  box.appendChild(el("h3", null, p.name));
+  let meta = p.path + " · 대상 " + (a.target || p.target) + " · 수정 " + fmtDateTime(p.mtime) + " · " + fmtNum(p.size) + " B";
+  if (a.filesystem) meta += " · " + a.filesystem.path + " 전체 " + fmtBytes(a.filesystem.size) + " (파일 " + fmtNum(a.filesystem.files) + "개)";
+  if (p.truncated) meta += " · 앞부분만 읽음";
+  box.appendChild(el("div", "meta", meta));
+  if (p.error) box.appendChild(el("div", "warn", "읽기 실패: " + p.error));
+  (a.warnings || []).forEach(w => box.appendChild(el("div", "warn", "⚠ " + w)));
+  const rules = a.rules || [];
+  if (rules.length) {
+    box.appendChild(el("h4", null, "정리 규칙 (해석 결과)"));
+    box.appendChild(policyTable(
+      ["정리 경로", "보관 기간", "파일 패턴", "출처", "현재 파일", "현재 용량", "기간 지난 파일", "기간 지난 용량", "가장 오래된 파일"], [4, 5, 6, 7],
+      rules.map(r => {
+        const scan = r.in_scan, hasDays = scan && r.days != null;
+        return [
+          td(r.path, "path", r.path),
+          td(r.days == null ? "–" : r.days + "일" + (r.days_key ? " (" + r.days_key + ")" : "")),
+          td(r.pattern || "전체"), td(r.source),
+          td(scan ? fmtNum(r.files) : "스캔 밖", "num"), td(scan ? fmtBytes(r.size) : "–", "num"),
+          td(hasDays ? fmtNum(r.expired_files) : "–", "num" + (r.expired_files ? " hot" : "")),
+          td(hasDays ? fmtBytes(r.expired_size) : "–", "num" + (r.expired_size ? " hot" : "")),
+          td(scan && r.oldest_mtime ? fmtDate(r.oldest_mtime) : "–"),
+        ];
+      })));
+  }
+  if ((p.vars || []).length) {
+    box.appendChild(el("h4", null, "설정 값"));
+    box.appendChild(policyTable(["행", "키", "값", "해석"], [0],
+      p.vars.map(v => [td(String(v.line), "num"), td(v.key), td(v.value, "path", v.value), td(v.kind)])));
+  }
+  if (p.content != null) {
+    const det = el("details");
+    det.appendChild(el("summary", null, "원문 보기 (" + (p.encoding || "") + ")"));
+    det.appendChild(el("pre", null, p.content));
+    box.appendChild(det);
+  }
+  return box;
+}
+async function renderPolicy() {
+  const sel = $("policyAgent");
+  const cur = sel.value;
+  sel.textContent = "";
+  sel.appendChild(Object.assign(el("option", null, "서버: 전체"), { value: "" }));
+  S.agents.forEach(a => sel.appendChild(Object.assign(el("option", null, agentLabel(a)), { value: String(a.id) })));
+  sel.value = cur;
+  const data = await api("/api/policies" + (cur ? "?agent=" + cur : ""));
+  /* 자동 갱신 때 내용이 그대로면 다시 그리지 않음 (펼친 원문이 접히지 않게) */
+  const key = S.unit + "|" + JSON.stringify(data);
+  if (key === S.policyKey && $("policyList").childNodes.length) return;
+  S.policyKey = key;
+  const list = $("policyList");
+  list.textContent = "";
+  let files = 0, expired = 0;
+  data.agents.forEach(g => {
+    files += g.policies.length;
+    g.policies.forEach(p => { expired += (p.analysis || {}).expired_size || 0; });
+  });
+  $("policyNote").textContent = "정책 파일(filesystem_auto_clear.env_*) " + files + "개 · 보관 기간이 지났는데 남아 있는 용량 " + fmtBytes(expired) +
+    " · 각 서버가 스캔 끝날 때 분석한 결과를 수집";
+  if (!data.agents.length) { list.appendChild(el("div", "empty", "등록된 서버가 없습니다.")); return; }
+  data.agents.forEach(g => {
+    const h = el("div", "polsrv");
+    h.appendChild(el("span", null, g.name || g.hostname || g.url));
+    h.appendChild(el("span", "sub", [g.hostname, g.ip].filter(Boolean).join(" · ") + " · 정책 " + g.policies.length + "개"));
+    const link = el("a", null, "상세 화면 열기"); link.href = "/agent/" + g.agent_id + "/";
+    h.appendChild(link);
+    list.appendChild(h);
+    if (!g.supported) {
+      list.appendChild(el("div", "polnone", g.status === "ok"
+        ? "이 서버의 에이전트는 정책 분석을 지원하지 않는 이전 버전입니다. fs-agent-m-install.sh로 업그레이드하세요."
+        : "아직 수집된 정책 정보가 없습니다."));
+      return;
+    }
+    if (!g.policies.length) { list.appendChild(el("div", "polnone", "찾은 정책 파일이 없습니다.")); return; }
+    g.policies.forEach(p => list.appendChild(policyCard(p)));
+  });
+}
+$("policyAgent").addEventListener("change", () => renderPolicy().catch(e => flash(e.message, true)));
+
 /* ---------- 서버 관리 ---------- */
 function renderManage() {
   const port = location.port && location.port !== "15900" ? ":" + location.port : "";
@@ -721,6 +839,7 @@ function renderTab() {
   if (S.tab === "servers") renderServers();
   else if (S.tab === "roots") renderRoots();
   else if (S.tab === "cleanup") renderCleanup().catch(e => flash(e.message, true));
+  else if (S.tab === "policy") renderPolicy().catch(e => flash(e.message, true));
   else if (S.tab === "manage") renderManage();
 }
 function renderAll() {

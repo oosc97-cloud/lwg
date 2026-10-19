@@ -51,7 +51,7 @@ from its own copy of the agent dashboard (`static/agent.html`, copied from
 `app/static/index.html` at master build time; `../app/static/index.html` when run from the repo).
 `master/server.py` (port 15900, own `config.json`, `data/fs_master.db`, systemd
 `fs-master`, `/opt/fs-master`) pulls each agent's existing API (`scan/status`, `summary`,
-`roots`, `tree`, `cleanup-candidates`) every `poll_interval_sec` (scanning agents every
+`roots`, `tree`, `cleanup-candidates`, `policies`) every `poll_interval_sec` (scanning agents every
 `scan_poll_sec`, status only) and keeps the last result on failure. `/agent/<id>/` proxies
 the agent dashboard by rewriting its `"/api/` fetch paths to `/agent/<id>/api/` — keep agent
 frontend API calls as quoted absolute `/api/...` strings. POST pass-through is limited to
@@ -89,6 +89,12 @@ stdlib `http.server` routing in `server.py` → SQLite (`data/fs_agent.db`, giti
   first-ever scan of that root drops its partial rows). On `done`, dirs up to
   `history.depth` are copied to `scan_history`, pruned to `history.keep_scans`
   per root — groundwork for phase-2 snapshot diffs (`GET /api/history`).
+- `app/policy.py` — files named `policy.file_prefix` (`filesystem_auto_clear.env_*`) seen during
+  the walk (+ `policy.extra_paths` globs) are re-read after `run_scan_many` (skipped on cancel),
+  parsed as shell env (KEY=VALUE, `${VAR}` expansion; non-KV lines scanned for path/days/pattern),
+  paired into rules (path ↔ days/pattern by key stem) and checked against `files` (expired
+  count/size). Stored in `policies` (created lazily by `policy.init`), served by `GET /api/policies`;
+  the master stores it per agent (`agents.policies`, NULL = old agent without the endpoint).
 - `app/hostinfo.py` — hostname + primary non-loopback IP (UDP route trick →
   `gethostbyname_ex` → `hostname -I`), stored on each `scans` row at scan start.
 - `app/db.py` — one short-lived connection per operation (thread safety), WAL mode,

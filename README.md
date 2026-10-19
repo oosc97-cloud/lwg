@@ -128,7 +128,19 @@ cd /opt/fs-agent && ./restart.sh
   - 트리맵: 면적 = 용량, 색 = 가치 등급, 폴더 클릭 시 이동
   - 파일 검색: 등급 필터·정렬·경로 검색 (최대 200개)
   - 변화: 최근 두 완료 스캔 비교 (루트 합계 + 1단계 폴더 증감)
+  - 정리 정책: 찾은 `filesystem_auto_clear.env_*` 파일 분석 (폴더 선택과 무관, 아래 "정리 정책 파일 분석")
 - 할당 용량은 실제 디스크 사용량(`st_blocks × 512`)이라 희소 파일은 용량보다 작게 나옵니다. 폴더 수·할당·최근 수정/접근 열은 이 버전 이후 스캔부터 채워집니다.
+
+## 정리 정책 파일 분석
+
+스캔 중 이름이 `filesystem_auto_clear.env_`로 시작하는 파일(예: `..._shblog`, `..._shbftp`, `..._shbrun`)을 찾으면
+스캔이 끝난 뒤 내용을 읽어 분석합니다 (대시보드 **정리 정책** 탭, 마스터는 서버별로 모아서 표시).
+
+- 쉘 env 형식(`KEY=VALUE`, `export`, 따옴표, `#` 주석, `${VAR}` 치환)으로 읽고 키 이름으로 경로·보관기간·패턴·임계값·사용여부를 구분
+- `KEY=VALUE`가 아닌 줄(`/경로 30 *.log` 등)도 경로·숫자·패턴을 찾아 규칙으로 해석
+- 규칙마다 스캔 결과와 대조: 현재 파일 수·용량, **보관 기간이 지났는데 남아 있는 파일·용량**, 가장 오래된 파일
+- 경고: 기간 지난 파일이 남아 있음(정리가 안 돌았을 수 있음), 경로가 비어 있음, 스캔 대상 밖, 사용 안 함(`USE_YN=N` 등)
+- 원문(UTF-8, 안 되면 EUC-KR)도 그대로 보여 줌. 스캔 대상 밖의 정책 파일은 `config.json` `policy.extra_paths`에 위치를 넣으면 같이 읽음
 
 ## API
 
@@ -148,6 +160,7 @@ cd /opt/fs-agent && ./restart.sh
 | GET | `/api/age` | 파일 나이 분포 (`by`=mtime/atime, `path`) |
 | GET | `/api/changes` | 루트별 최근 두 완료 스캔 비교 (루트 합계 + 1단계 디렉터리 증감, `limit`) |
 | GET | `/api/history` | 스캔별 디렉터리 집계 이력 (`path` 미지정 시 스캔 루트) |
+| GET | `/api/policies` | 정리 정책 파일(`filesystem_auto_clear.env_*`) 원문·설정 값·정리 규칙 분석 (`content=0`이면 원문 제외) |
 
 ## 설정 (`config.json`)
 
@@ -158,6 +171,7 @@ cd /opt/fs-agent && ./restart.sh
 | `grades` | `{"hot": 70, "warm": 40, "cold": 10}` | 등급별 하한 점수 |
 | `cleanup` | `{"grades": ["cold", "stale"], "min_size_mb": 0}` | 정리 후보 등급과 최소 크기 |
 | `history` | `{"keep_scans": 10, "depth": 2}` | 루트별 보관할 완료 스캔 수와 이력에 남길 디렉터리 깊이 |
+| `policy` | `{"file_prefix": "filesystem_auto_clear.env_", "max_bytes": 262144, "extra_paths": []}` | 정리 정책 파일 이름 접두어, 읽을 최대 크기, 스캔 대상 밖 정책 파일 위치(glob) |
 | `db_path` | `data/fs_agent.db` | SQLite 위치 |
 
 `grades`나 `cleanup`을 바꾸면 다음 스캔부터 반영됩니다.

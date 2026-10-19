@@ -63,8 +63,8 @@ sudo bash fs-master-install.sh --uninstall [--purge] # 제거 (--purge 없으면
 (서버 관리 탭에 마스터 IP가 채워진 명령이 나옵니다):
 
 ```bash
-curl -fsSO http://10.0.0.9:15900/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh --master 10.0.0.9   # 새 서버
-curl -fsSO http://10.0.0.9:15900/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh                     # 업그레이드
+cd /tmp && curl -fsS -o fs-agent-m-install.sh http://10.0.0.9:15900/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh --master 10.0.0.9   # 새 서버
+cd /tmp && curl -fsS -o fs-agent-m-install.sh http://10.0.0.9:15900/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh                     # 업그레이드
 ```
 
 - 에이전트는 등록 신호에 자기 버전을 보내고, 서버 탭은 마스터가 가진 설치 파일보다 이전 버전이면 "업데이트 필요"로 표시합니다.

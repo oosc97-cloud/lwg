@@ -270,9 +270,9 @@ EOF
     myip=$(hostname -I 2>/dev/null | awk '{print $1}')
     local maddr="${myip:-<마스터IP>}$( [ "$PORT" = 15900 ] || echo ":$PORT")"
     echo "  에이전트 추가: 각 서버(root)에서 아래 한 줄이면 마스터에서 설치 파일을 받아 설치하고 자동 등록됩니다."
-    echo "      curl -fsSO http://$maddr/dl/fs-agent-m-install.sh && bash fs-agent-m-install.sh --master $maddr"
+    echo "      cd /tmp && curl -fsS -o fs-agent-m-install.sh http://$maddr/dl/fs-agent-m-install.sh && bash fs-agent-m-install.sh --master $maddr"
     echo "  에이전트 업그레이드: 각 서버(root)에서"
-    echo "      curl -fsSO http://$maddr/dl/fs-agent-m-install.sh && bash fs-agent-m-install.sh"
+    echo "      cd /tmp && curl -fsS -o fs-agent-m-install.sh http://$maddr/dl/fs-agent-m-install.sh && bash fs-agent-m-install.sh"
     echo "  마스터 ↔ 에이전트 사이에 $PORT(마스터)·15892(에이전트) 포트가 열려 있어야 합니다 (방화벽은 건드리지 않음)."
     echo "  상태: systemctl status $SERVICE   로그: journalctl -u $SERVICE"
     echo "  재시작: systemctl restart $SERVICE   제거: sudo bash $0 --uninstall"

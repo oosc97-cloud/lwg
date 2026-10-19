@@ -748,7 +748,8 @@ function renderManage() {
   /* 브라우저 주소(외부 도메인일 수 있음) 대신 마스터가 알려 주는 내부 IP를 우선 사용 */
   const maddr = (S.installer && S.installer.master_addr) || (location.hostname + port);
   const full = maddr.indexOf(":") >= 0 ? maddr : maddr + ":15900";
-  const dl = "curl -fsSO http://" + full + "/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh";
+  /* 저장 파일명을 -o로 명시: -O를 -0(숫자)으로 잘못 치면 설치 파일(바이너리)이 화면에 쏟아짐 */
+  const dl = "cd /tmp && curl -fsS -o fs-agent-m-install.sh http://" + full + "/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh";
   $("installCmd").textContent = dl + " --master " + maddr;
   $("upgradeCmd").textContent = dl;
   const old = S.agents.filter(needsUpgrade);

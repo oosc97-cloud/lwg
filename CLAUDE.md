@@ -55,7 +55,10 @@ from its own copy of the agent dashboard (`static/agent.html`, copied from
 `scan_poll_sec`, status only) and keeps the last result on failure. `/agent/<id>/` proxies
 the agent dashboard by rewriting its `"/api/` fetch paths to `/agent/<id>/api/` — keep agent
 frontend API calls as quoted absolute `/api/...` strings. POST pass-through is limited to
-scan, scan/cancel, reset (`allow_agent_control`).
+scan, scan/cancel, reset (`allow_agent_control`). The master bundles `release/fs-agent-m-install.sh` (build the
+agent-m release first) and serves it at `/dl/fs-agent-m-install.sh`; agents report `version` (bundle `VERSION`)
+in the heartbeat and the UI flags older ones. The user chose curl-one-liner upgrades: no remote-exec/self-upgrade
+endpoint on agents (it was rejected as a root RCE surface).
 
 ## Architecture
 

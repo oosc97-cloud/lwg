@@ -237,7 +237,8 @@ POLLER = Poller()
 
 def _agent_view(a):
     out = {k: a[k] for k in ("id", "name", "url", "enabled", "status", "error",
-                             "added_at", "last_poll_at", "last_ok_at", "hostname", "ip", "last_seen_at")}
+                             "added_at", "last_poll_at", "last_ok_at", "hostname", "ip", "last_seen_at",
+                             "version")}
     out["auto"] = bool(a["agent_key"])
     pols = json.loads(a["policies"]) if a.get("policies") else None
     # 서버 목록용 정책 요약 (원문·규칙은 /api/policies)
@@ -256,8 +257,50 @@ def api_agents():
         "agents": [_agent_view(a) for a in mdb.list_agents(DB_PATH)],
         "poll_interval_sec": CFG["poll_interval_sec"],
         "allow_control": bool(CFG["allow_agent_control"]),
+        "agent_installer": installer_info(),
         "now": time.time(),
     }
+
+
+# 마스터가 내려주는 에이전트 설치 파일: 설치판은 agent/ (빌드 때 release/에서 복사),
+# 저장소에서 직접 실행하면 ../release/. 각 에이전트 서버에서 curl로 받아 설치·업그레이드한다.
+AGENT_INSTALLER_FILES = (BASE_DIR / "agent" / "fs-agent-m-install.sh",
+                         BASE_DIR.parent / "release" / "fs-agent-m-install.sh")
+_VERSION_RE = re.compile(rb'^VERSION="([^"]*)"', re.M)
+
+
+def installer_path():
+    for p in AGENT_INSTALLER_FILES:
+        if p.is_file():
+            return p
+    return None
+
+
+def master_addr():
+    """에이전트가 접속할 이 마스터의 주소 (대표 IP + 기본 포트가 아니면 :포트). 설치 명령 안내용."""
+    ip = ""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:  # UDP connect는 패킷을 보내지 않고 라우팅만 결정
+        s.connect(("10.255.255.255", 1))
+        ip = s.getsockname()[0]
+    except OSError:
+        pass
+    finally:
+        s.close()
+    if not ip or ip.startswith("127."):
+        return ""
+    port = int(CFG.get("port", 15900))
+    return ip if port == 15900 else "%s:%d" % (ip, port)
+
+
+def installer_info():
+    p = installer_path()
+    if not p:
+        return {"available": False, "version": "", "master_addr": master_addr()}
+    with open(str(p), "rb") as f:
+        m = _VERSION_RE.search(f.read(4096))
+    return {"available": True, "version": m.group(1).decode("utf-8", "replace") if m else "",
+            "path": "/dl/fs-agent-m-install.sh", "master_addr": master_addr()}
 
 
 def api_cleanup(q):
@@ -326,7 +369,8 @@ def api_register(body, client_ip):
         client_ip = client_ip[len("::ffff:"):]
     url = normalize_url("%s:%d" % ("[%s]" % client_ip if ":" in client_ip else client_ip, port))
     hostname = str(body.get("hostname") or "")[:200]
-    aid, changed = mdb.register_agent(DB_PATH, key, url, hostname, time.time())
+    version = str(body.get("version") or "")[:60]
+    aid, changed = mdb.register_agent(DB_PATH, key, url, hostname, time.time(), version)
     if changed:
         POLLER.force(aid)
     return 200, {"id": aid, "url": url}
@@ -502,6 +546,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_json(api_cleanup(q))
         if route == "/api/policies":
             return self._send_json(api_policies(q))
+        if route == "/dl/fs-agent-m-install.sh":
+            p = installer_path()
+            if not p:
+                return self._send_json({"detail": "마스터에 에이전트 설치 파일이 없습니다."}, 404)
+            return self._send(p.read_bytes(), "application/x-sh",
+                              extra={"Content-Disposition": 'attachment; filename="fs-agent-m-install.sh"'})
         return self._send_json({"detail": "not found"}, 404)
 
     def _post(self, route):
@@ -623,6 +673,7 @@ def main():
     ap.add_argument("--host", default=CFG.get("host", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(CFG.get("port", 15900)))
     args = ap.parse_args()
+    CFG["port"] = args.port  # 설치 명령 안내에 실제 포트 사용
 
     try:
         pid = int(PID_FILE.read_text().strip())

@@ -10,10 +10,19 @@ import threading
 import time
 import urllib.request
 import uuid
+from pathlib import Path
 from urllib.parse import urlparse
 
 _state = {"master": "", "last_ok_at": None, "last_error": "", "agent_id": None}
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # 내부망 직접 접속
+
+
+def current_version():
+    """설치 번들의 VERSION (저장소에서 직접 실행하면 dev)."""
+    try:
+        return (Path(__file__).resolve().parent.parent / "VERSION").read_text().strip() or "dev"
+    except OSError:
+        return "dev"
 
 
 def _agent_key(data_dir):
@@ -59,10 +68,13 @@ def start(cfg, port, data_dir):
     if urlparse(master).port is None:  # 포트 생략 시 마스터 기본 포트
         master += ":15900"
     _state["master"] = master
-    payload = {"port": int(port), "hostname": socket.gethostname(), "agent_key": _agent_key(data_dir)}
+    payload = {"port": int(port), "hostname": socket.gethostname(), "agent_key": _agent_key(data_dir),
+               "version": current_version()}
     interval = max(30, int(cfg.get("master_heartbeat_sec", 300)))
     threading.Thread(target=_loop, args=(master, payload, interval), daemon=True).start()
 
 
 def status():
-    return dict(_state)
+    out = dict(_state)
+    out["version"] = current_version()
+    return out

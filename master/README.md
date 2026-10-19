@@ -59,6 +59,20 @@ sudo bash fs-master-install.sh --uninstall [--purge] # 제거 (--purge 없으면
 
 ## 에이전트 설치 (각 서버, root)
 
+마스터가 에이전트 설치 파일을 가지고 있다가 `/dl/fs-agent-m-install.sh`로 내려줍니다. 파일을 따로 복사할 필요 없이 각 서버에서 한 줄이면 됩니다
+(서버 관리 탭에 마스터 IP가 채워진 명령이 나옵니다):
+
+```bash
+curl -fsSO http://10.0.0.9:15900/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh --master 10.0.0.9   # 새 서버
+curl -fsSO http://10.0.0.9:15900/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh                     # 업그레이드
+```
+
+- 에이전트는 등록 신호에 자기 버전을 보내고, 서버 탭은 마스터가 가진 설치 파일보다 이전 버전이면 "업데이트 필요"로 표시합니다.
+- 마스터 화면 버튼으로 원격 실행하는 방식은 쓰지 않습니다 (마스터가 모든 에이전트 서버에서 root로 실행할 수 있게 되므로). 업그레이드는 각 서버에서 위 명령을 실행합니다.
+- 마스터 설치 파일에 그 시점의 에이전트 설치 파일이 들어 있으므로, 새 에이전트 버전을 배포하려면 마스터를 먼저 업그레이드합니다.
+
+직접 복사한 설치 파일로도 같습니다:
+
 ```bash
 sudo bash fs-agent-m-install.sh --master 10.0.0.9          # 마스터 IP (포트 생략 시 15900)
 sudo bash fs-agent-m-install.sh --master 10.0.0.9:15901    # 마스터 포트가 다를 때
@@ -78,7 +92,7 @@ sudo bash fs-agent-m-install.sh --status | --uninstall [--purge]
 
 ```bash
 master/build-installer.sh                       # dist/fs-master-install-<버전>.sh
-master/build-installer.sh --release             # + release/fs-master-install.sh (저장소에 커밋)
+master/build-installer.sh --release             # + release/fs-master-install.sh (저장소에 커밋). release/fs-agent-m-install.sh를 함께 넣으므로 에이전트를 먼저 빌드
 ./build-installer.sh --master-edition [--release]   # 마스터 연동 에이전트 dist/fs-agent-m-install-<버전>.sh (+ release/)
 ```
 
@@ -117,4 +131,5 @@ python3 master/server.py --port 15900
 | POST | `/api/agents/<id>/delete` | 목록에서 삭제 (에이전트는 건드리지 않음) |
 | POST | `/api/agents/<id>/poll`, `/api/poll` | 즉시 수집 (한 대 / 전체) |
 | POST | `/api/scan-all` | 사용 중인 모든 에이전트에 스캔 시작 요청 |
+| GET | `/dl/fs-agent-m-install.sh` | 에이전트 설치 파일 내려받기 (마스터 설치본의 `agent/`, 저장소 실행 시 `../release/`) |
 | GET/POST | `/agent/<id>/...` | 에이전트 화면·API 중계 (POST는 scan, scan/cancel, reset만) |

@@ -17,6 +17,14 @@ cp -a server.py master_db.py config.json README.md "$STAGE/fs-master/"
 cp -a static/. "$STAGE/fs-master/static/"
 cp -a ../app/static/index.html "$STAGE/fs-master/static/agent.html"   # 서버별 상세 화면 (에이전트 대시보드)
 echo "$VERSION" > "$STAGE/fs-master/VERSION"
+# 에이전트 설치 파일을 같이 넣어 마스터가 /dl/fs-agent-m-install.sh 로 내려준다 (먼저 ./build-installer.sh --master-edition --release)
+if [ -f ../release/fs-agent-m-install.sh ]; then
+  mkdir -p "$STAGE/fs-master/agent"
+  cp -a ../release/fs-agent-m-install.sh "$STAGE/fs-master/agent/"
+  echo "포함: 에이전트 설치 파일 $(cat ../release/AGENT_M_VERSION 2>/dev/null)"
+else
+  echo "경고: release/fs-agent-m-install.sh 가 없어 에이전트 설치 파일을 넣지 않습니다." >&2
+fi
 
 sed "s/@VERSION@/$VERSION/" installer/install-header.sh > "$OUT"
 tar -C "$STAGE/fs-master" --owner=0 --group=0 -czf - . >> "$OUT"

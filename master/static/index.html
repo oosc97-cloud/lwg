@@ -99,6 +99,8 @@
   td.path { max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
   td.err { color: var(--bad); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .sub { color: var(--text-muted); font-size: 11px; }
+  .sub.oldver { color: #b45309; }
+  @media (prefers-color-scheme: dark) { .sub.oldver { color: #fbbf24; } }
   .trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
   .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
   .dot.ok { background: var(--ok); } .dot.error { background: var(--bad); } .dot.unknown { background: var(--text-muted); }
@@ -225,7 +227,11 @@
           <div class="card">
             <h2>서버 추가 방법 (자동 등록)</h2>
             <div class="help">각 서버에 마스터 연동용 에이전트를 설치할 때 이 마스터 주소를 넣으면, 설치가 끝나는 즉시 아래 목록에 자동으로 나타납니다.</div>
-            <code id="installCmd" style="display:block;margin-top:6px;padding:6px 8px;background:var(--surface-2);border-radius:6px;font-size:12px"></code>
+            <div class="help" style="margin-top:6px">새 서버 설치 (각 서버에서 root로 실행, 설치 파일을 이 마스터에서 받음):</div>
+            <code id="installCmd" style="display:block;margin-top:4px;padding:6px 8px;background:var(--surface-2);border-radius:6px;font-size:12px;word-break:break-all"></code>
+            <div class="help" style="margin-top:6px">에이전트 업그레이드 (이미 설치된 서버에서 root로 실행, 마스터 주소·스캔 결과 유지):</div>
+            <code id="upgradeCmd" style="display:block;margin-top:4px;padding:6px 8px;background:var(--surface-2);border-radius:6px;font-size:12px;word-break:break-all"></code>
+            <div class="help" id="installerInfo"></div>
             <div class="help">에이전트가 5분마다 마스터에 신호를 보내므로 서버 IP가 바뀌어도 자동으로 따라갑니다. 마스터 서버에서 에이전트 포트(15892)로, 에이전트에서 마스터 포트로 서로 접속되어야 합니다.</div>
           </div>
           <details>
@@ -345,6 +351,10 @@ async function api(url, method, body) {
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || ("HTTP " + r.status));
   return data;
+}
+/* 자동 등록 에이전트가 마스터가 가진 설치 파일보다 이전 버전인지 (버전을 안 알려 주는 구버전 포함) */
+function needsUpgrade(a) {
+  return !!(a.auto && S.installer && S.installer.version && a.version !== S.installer.version && a.version !== "dev");
 }
 function agentLabel(a) { return a.name || a.hostname || a.url; }
 function isScanning(a) { return a.scan && (a.scan.status === "running" || a.scan.status === "cancelling"); }
@@ -492,6 +502,12 @@ function renderServers() {
     link.href = "/agent/" + a.id + "/";
     link.title = "이 서버의 상세 화면 열기";
     name.append(link, el("div", "sub", (a.hostname ? a.hostname + (a.ip ? " · " + a.ip : "") + " · " : "") + a.url));
+    if (a.version || a.auto) {
+      const old = needsUpgrade(a);
+      const v = el("div", "sub" + (old ? " oldver" : ""), "버전 " + (a.version || "확인 불가") + (old ? " · 업데이트 필요" : ""));
+      if (old) v.title = "서버 관리 탭의 업그레이드 명령을 그 서버에서 실행하세요 (최신 " + S.installer.version + ")";
+      name.appendChild(v);
+    }
     tr.appendChild(name);
     if (s) {
       tr.appendChild(barCell(s.total_size, maxSize, fmtBytes(s.total_size)));
@@ -716,7 +732,7 @@ async function renderPolicy() {
     list.appendChild(h);
     if (!g.supported) {
       list.appendChild(el("div", "polnone", g.status === "ok"
-        ? "이 서버의 에이전트는 정책 분석을 지원하지 않는 이전 버전입니다. fs-agent-m-install.sh로 업그레이드하세요."
+        ? "이 서버의 에이전트는 정책 분석을 지원하지 않는 이전 버전입니다. 서버 관리 탭의 업그레이드 명령을 그 서버에서 실행하세요."
         : "아직 수집된 정책 정보가 없습니다."));
       return;
     }
@@ -729,7 +745,16 @@ $("policyAgent").addEventListener("change", () => renderPolicy().catch(e => flas
 /* ---------- 서버 관리 ---------- */
 function renderManage() {
   const port = location.port && location.port !== "15900" ? ":" + location.port : "";
-  $("installCmd").textContent = "sudo bash fs-agent-m-install.sh --master " + location.hostname + port;
+  /* 브라우저 주소(외부 도메인일 수 있음) 대신 마스터가 알려 주는 내부 IP를 우선 사용 */
+  const maddr = (S.installer && S.installer.master_addr) || (location.hostname + port);
+  const full = maddr.indexOf(":") >= 0 ? maddr : maddr + ":15900";
+  const dl = "curl -fsSO http://" + full + "/dl/fs-agent-m-install.sh && sudo bash fs-agent-m-install.sh";
+  $("installCmd").textContent = dl + " --master " + maddr;
+  $("upgradeCmd").textContent = dl;
+  const old = S.agents.filter(needsUpgrade);
+  $("installerInfo").textContent = S.installer && S.installer.available
+    ? "마스터가 가진 에이전트 버전: " + S.installer.version + (old.length ? " · 업데이트 필요: " + old.map(agentLabel).join(", ") : " · 모든 자동 등록 서버가 최신입니다.")
+    : "이 마스터에는 에이전트 설치 파일이 없습니다 (마스터 설치 파일을 다시 받아 업그레이드하세요).";
   const tb = $("mgRows");
   tb.textContent = "";
   if (!S.agents.length) {
@@ -860,6 +885,7 @@ async function load() {
     S.selected = new Set([...S.selected].filter(id => ids.has(id)));
     S.allowControl = data.allow_control;
     S.interval = data.poll_interval_sec;
+    S.installer = data.agent_installer || {};
     S.lastLoad = Date.now() / 1000;
     renderAll();
   } catch (e) {

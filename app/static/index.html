@@ -125,6 +125,8 @@
   .pbar > div { height: 100%; background: var(--accent); }
   .tr-row.filesrow { color: var(--text-secondary); font-style: italic; }
   .tr-row.filesrow .pbar > div { opacity: .5; }
+  .tr-row.filerow { color: var(--text-secondary); }
+  .tr-row.filerow .pbar > div { opacity: .6; }
 
   /* 탭 */
   .tabs { display: flex; gap: 2px; padding: 0 6px; border-bottom: 1px solid var(--grid); background: var(--surface-2); overflow-x: auto; flex: none; }
@@ -511,6 +513,7 @@ function dirOfFile(p) { return p.slice(0, Math.max(p.lastIndexOf("/"), p.lastInd
 
 /* ---------- 폴더 트리 (왼쪽) ---------- */
 const treeNodes = new Map(); /* path -> 노드 */
+const TREE_FILES = 50;       /* 트리에 파일명으로 보여 줄 파일 수 (폴더별, 큰 순) */
 
 function virtualRoot() {
   const sum = k => S.roots.reduce((s, r) => s + (r[k] || 0), 0);
@@ -551,27 +554,36 @@ function makeTreeNode(d, depth, parent) {
 async function loadChildren(node) {
   if (node.loaded) return;
   node.loaded = true;
-  let dirs, own = null;
+  let dirs, own = null, files = [];
   if (node.d.path === "") {
     dirs = S.roots;
   } else {
-    const data = await getJSON("/api/tree?files_limit=0&path=" + encodeURIComponent(node.d.path));
+    const data = await getJSON("/api/tree?files_limit=" + TREE_FILES + "&path=" + encodeURIComponent(node.d.path));
     dirs = data.dirs;
     own = data.own_files;
+    files = data.files || [];
   }
   dirs = dirs.slice().sort((a, b) => b[S.metric] - a[S.metric]);
   dirs.forEach(c => node.kids.appendChild(makeTreeNode(c, node.depth + 1, node).wrap));
-  if (own && own.count > 0) {
-    /* TreeSize의 [파일] 행: 이 폴더 바로 아래 파일들의 합계 */
-    const v = S.metric === "file_count" ? own.count : own.size;
+  const fileRow = (label, title, v, cls, onClick) => {
     const p = pct(v, node.d[S.metric]);
-    const row = el("div", "tr-row filesrow");
+    const row = el("div", "tr-row " + cls);
     const name = el("span", "tr-name");
     name.style.paddingLeft = (node.depth + 1) * 14 + "px";
-    name.append(el("span", "caret none", "▶"), el("span", "ico files"), el("span", "lbl", "[파일 " + fmtNum(own.count) + "개]"));
+    name.append(el("span", "caret none", "▶"), el("span", "ico files"), el("span", "lbl", label));
+    row.title = title;
     row.append(name, bar(p), el("span", "num", S.metric === "file_count" ? fmtNum(v) : fmtBytes(v)), el("span", "num", p.toFixed(1) + "%"));
-    row.addEventListener("click", () => selectPath(node.d.path));
+    row.addEventListener("click", onClick);
     node.kids.appendChild(row);
+  };
+  /* 이 폴더 바로 아래 파일: 큰 순 TREE_FILES개는 실제 파일명으로, 나머지는 합계 행 하나로 */
+  files.forEach(f => fileRow(f.name, f.path + "\n수정 " + fmtDateTime(f.mtime) + " · 점수 " + f.score.toFixed(1),
+    S.metric === "file_count" ? 1 : f.size, "filerow", () => selectPath(node.d.path)));
+  if (own && own.count > files.length) {
+    const restN = own.count - files.length;
+    const restSize = own.size - files.reduce((t, f) => t + f.size, 0);
+    fileRow((files.length ? "[나머지 파일 " : "[파일 ") + fmtNum(restN) + "개]", "이 폴더 바로 아래의 나머지 파일 합계 (상세 탭·파일 검색에서 확인)",
+      S.metric === "file_count" ? restN : restSize, "filesrow", () => selectPath(node.d.path));
   }
   if (!dirs.length && !(own && own.count)) node.caret.classList.add("none");
 }
